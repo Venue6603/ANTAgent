@@ -12,7 +12,7 @@ import os
 import re as _re
 from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths
 
-# Random animal: Elephant
+# Random animal: Giraffe
 from pathlib import Path as _Path
 
 def _repo_root() -> _Path:
@@ -42,6 +42,8 @@ LLAMA_DEFAULT_CTX = int(os.getenv("ANT_LLAMA_CTX", "4096"))
 LLAMA_MAX_TOKENS  = int(os.getenv("ANT_LLAMA_MAX_TOKENS", "512"))
 LLAMA_SAFETY_PAD  = 256  # guardrail to avoid overruns
 _LAST_SELF_IMPROVE_DIAG: dict | None = None
+# Tracks which remote provider was used when llama is unavailable
+_LAST_FALLBACK_ENGINE: str | None = None
 
 def _validate_unified_diff(diff_text: str) -> None:
     """
@@ -248,6 +250,40 @@ def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
 
 
 def _openai_completion_diff_only(prompt: str, *, model: str = "gpt-4o-mini") -> str:
+    """
+    Try DeepSeek (OpenAI-compatible) first if DEEPSEEK_API_KEY is set, else fall back to OpenAI.
+    Returns assistant text or empty string on failure.
+    """
+    global _LAST_FALLBACK_ENGINE
+
+    # 1) DeepSeek first (if configured)
+    ds_key = os.getenv("DEEPSEEK_API_KEY")
+    if ds_key:
+        base = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+        ds_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        try:
+            resp = requests.post(
+                f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"},
+                data=json.dumps({
+                    "model": ds_model,
+                    "messages": [
+                        {"role": "system", "content": "Return only a valid unified diff; no prose or backticks. STRICT"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0
+                }),
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            _LAST_FALLBACK_ENGINE = "deepseek"
+            return (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+        except Exception:
+            # continue to OpenAI below
+            pass
+
+    # 2) OpenAI fallback
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return ""
@@ -267,6 +303,7 @@ def _openai_completion_diff_only(prompt: str, *, model: str = "gpt-4o-mini") -> 
         )
         resp.raise_for_status()
         data = resp.json()
+        _LAST_FALLBACK_ENGINE = "openai"
         return (data["choices"][0]["message"]["content"] or "").strip()
     except Exception:
         return ""
@@ -382,8 +419,12 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
 
         prompt = _render_diff_prompt(goal, constraints, files)
         diff_text = _openai_completion_diff_only(prompt)
-        used_engine = "openai"
-        print("[ENGINE] OpenAI fallback used")
+        used_engine = _LAST_FALLBACK_ENGINE or "openai"
+        try:
+            label = used_engine.capitalize()
+        except Exception:
+            label = str(used_engine)
+        print(f"[ENGINE] {label} fallback used")
 
     diff = _extract_unified_diff(diff_text)
     summary = (

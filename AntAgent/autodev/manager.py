@@ -1718,21 +1718,71 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
             diff_text = result["choices"][0]["message"]["content"] or ""
             used_engine = "llama"
 
-            # Validate diff format
+            # Validate DeepSeek/LLaMA diff via extract → repair → preflight → validate
             mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
-            engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "DeepSeek"
-            if diff_text and diff_text.lstrip().startswith("diff --git"):
-                print(f"[ENGINE] {engine_label} successful")
-
-                # Extra validation: check if mentioned file is in our targets
-                mentioned_files = re.findall(r'diff --git a/([^\s]+)', diff_text)
-                if mentioned_files:
-                    mentioned = mentioned_files[0]
-                    if not any(mentioned in path or path in mentioned for path in target_paths):
-                        print(f"[WARNING] Diff mentions {mentioned} but not in targets: {target_paths}")
-            else:
-                print(f"[ENGINE] {engine_label} produced invalid diff format")
-                diff_text = ""
+            engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "LLaMA"
+            candidate = _extract_unified_diff(diff_text or "")
+            valid_local = False
+            if candidate:
+                try:
+                    rel = _first_diff_target_path(candidate)
+                    if rel:
+                        abs_path = str((_repo_root() / rel).as_posix())
+                        fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                        if fixed:
+                            candidate = fixed
+                except Exception:
+                    pass
+                try:
+                    preflight_verify_paths(candidate)
+                    _validate_unified_diff(candidate)
+                    diff_text = candidate
+                    valid_local = True
+                    print(f"[ENGINE] {engine_label} successful")
+                    # Extra validation: check if mentioned file is in our targets
+                    mentioned_files = re.findall(r'diff --git a([^\s]+)', diff_text)
+                    if mentioned_files:
+                        mentioned = mentioned_files[0]
+                        if not any(mentioned in path or path in mentioned for path in target_paths):
+                            print(f"[WARNING] Diff mentions {mentioned} but not in targets: {target_paths}")
+                except Exception:
+                    valid_local = False
+            if not valid_local:
+                print(f"[ENGINE] {engine_label} produced invalid diff format; retrying with stricter prompt")
+                try:
+                    _llm = Llama(model_path=model_path, n_ctx=n_ctx, n_batch=256, n_gpu_layers=gpu_layers, verbose=False)
+                    retry_system = "Return ONLY a valid unified diff that starts with 'diff --git'. No prose, no backticks."
+                    retry_user = diff_prompt + "\n\nPrevious output was INVALID. STRICTLY follow the OUTPUT FORMAT."
+                    _res = _llm.create_chat_completion(
+                        messages=[{"role": "system", "content": retry_system}, {"role": "user", "content": retry_user}],
+                        temperature=0.0,
+                        top_p=0.05,
+                        max_tokens=1024,
+                    )
+                    diff_text = (_res["choices"][0]["message"]["content"] or "").strip()
+                    candidate = _extract_unified_diff(diff_text)
+                    if candidate:
+                        try:
+                            rel = _first_diff_target_path(candidate)
+                            if rel:
+                                abs_path = str((_repo_root() / rel).as_posix())
+                                fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                                if fixed:
+                                    candidate = fixed
+                        except Exception:
+                            pass
+                        try:
+                            preflight_verify_paths(candidate)
+                            _validate_unified_diff(candidate)
+                            diff_text = candidate
+                            valid_local = True
+                            print(f"[ENGINE] {engine_label} retry successful")
+                        except Exception:
+                            valid_local = False
+                except Exception:
+                    valid_local = False
+                if not valid_local:
+                    diff_text = ""
 
     except Exception as e:
         mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""

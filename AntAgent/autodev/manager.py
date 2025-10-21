@@ -153,15 +153,32 @@ OUTPUT FORMAT (strict):
 """
 
 def _extract_unified_diff(text: str) -> str:
+    """Extract unified diff from possibly markdown-wrapped text."""
     if not text:
         return ""
-    # strip markdown fences if present
-    text = re.sub(r"^\s*```[a-zA-Z0-9_-]*\s*", "", text)
-    text = re.sub(r"^\s*```[a-zA-Z0-9_-]*\s*", "", text.strip())
-    text = re.sub(r"\s*```$", "", text.strip())
-    m = re.search(r"(?ms)^diff --git .*\n", text)
-    m = re.search(r"(?ms)^diff --git .*$", text)
-    return text[m.start():].strip() if m else ""
+
+    # Strip markdown code fences (```diff, ```patch, or just ```)
+    text = re.sub(r"^```(?:diff|patch)?\s*\n", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n```\s*$", "", text)
+    text = text.strip()
+
+    # Find the start of the unified diff
+    m = re.search(r"(?m)^diff --git ", text)
+    if not m:
+        return ""
+
+    # Extract from the diff start to the end
+    diff_content = text[m.start():]
+
+    # Validate it has the essential components
+    if not re.search(r"(?m)^---", diff_content):
+        return ""
+    if not re.search(r"(?m)^\+\+\+", diff_content):
+        return ""
+    if not re.search(r"(?m)^@@", diff_content):
+        return ""
+
+    return diff_content.strip()
 
 
 def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
@@ -1630,21 +1647,38 @@ What is the exact file and line to change?"""},
                     data=json.dumps({
                         "model": "gpt-4o-mini",
                         "messages": [
-                            {"role": "system", "content": "Output only valid unified diff. No markdown."},
+                            {"role": "system", "content": "You are a unified diff generator. Output ONLY raw unified diff format. No explanations, no markdown fences, no backticks."},
                             {"role": "user", "content": f"""
-Target: {explanation}
+Based on this analysis:
+{explanation}
 
-FILES:
+Current file content:
 {_budgeted_files_block(files_for_context, 2000)}
 
-Generate unified diff for: {goal}
+Generate a unified diff to: {goal}
 
-Requirements:
-- Start with 'diff --git a/<path> b/<path>'
-- Include --- and +++ headers
-- Use @@ -X,Y +X,Z @@ format  
-- Include 3+ context lines
-- Output ONLY the diff"""},
+STRICT FORMAT REQUIREMENTS:
+1. First line MUST be: diff --git a/AntAgent/autodev/manager.py b/AntAgent/autodev/manager.py
+2. Second line: --- a/AntAgent/autodev/manager.py
+3. Third line: +++ b/AntAgent/autodev/manager.py
+4. Fourth line: @@ -[oldline],[count] +[newline],[count] @@
+5. Then context lines (prefix with space), removed lines (prefix with -), added lines (prefix with +)
+6. Include at least 3 lines of context before and after the change
+
+Example format:
+diff --git a/AntAgent/autodev/manager.py b/AntAgent/autodev/manager.py
+--- a/AntAgent/autodev/manager.py
++++ b/AntAgent/autodev/manager.py
+@@ -13,7 +13,7 @@
+ from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths
+
+-# Random animal: Elephant
++# Random animal: Giraffe
+ from pathlib import Path as _Path
+
+ def _repo_root() -> _Path:
+
+OUTPUT ONLY THE DIFF, NO OTHER TEXT."""},
                         ],
                         "temperature": 0
                     }),
@@ -1654,6 +1688,9 @@ Requirements:
                 if resp.ok:
                     diff_text = resp.json()["choices"][0]["message"]["content"]
                     used_engine = "openai"
+                    print(f"[ENGINE] OpenAI diff response (first 300 chars): {diff_text[:300]}")
+                else:
+                    print(f"[ENGINE] OpenAI diff request failed: {resp.status_code} - {resp.text[:200]}")
 
             except Exception as e:
                 print(f"[ENGINE] OpenAI error: {e}")

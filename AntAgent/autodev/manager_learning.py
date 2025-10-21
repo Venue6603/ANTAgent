@@ -681,13 +681,26 @@ def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attemp
     }
 
 def _diff_targets(udiff_text: str) -> list[str]:
-    # Accept both "diff --git a/X b/X" and "diff --git X X"
-    pats = re.findall(r"^diff --git\s+(?:a/)?([^\s]+)\s+(?:b/)?\1", udiff_text, flags=re.M)
+    """Extract file paths from unified diff headers."""
+    if not udiff_text:
+        return []
+
     seen, out = set(), []
+
+    # Try strict pattern first (with backreference)
+    pats = re.findall(r"^diff --git\s+(?:a/)?([^\s]+)\s+(?:b/)?\1", udiff_text, flags=re.M)
+
+    # If strict pattern fails, try lenient pattern (extract b/ path)
+    if not pats:
+        # Match: diff --git a/X b/Y  (take Y, the b/ path)
+        lenient = re.findall(r"^diff --git\s+(?:a/)?[^\s]+\s+(?:b/)?([^\s]+)", udiff_text, flags=re.M)
+        pats = lenient
+
     for p in pats:
         if p not in seen:
             seen.add(p)
             out.append(p.replace("\\", "/"))
+
     return out
 
 def _project_root() -> Path:
@@ -1309,9 +1322,14 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             diff = (diff or "").replace("\r\n", "\n").strip()
             if not diff:
                 # Try to recover a diff from the explanation
+                print(f"[DEBUG] No diff from primary source, trying to extract from explanation...")
                 diff = _extract_unified_diff_from_text(explanation or "") or ""
+                if diff:
+                    print(f"[DEBUG] Recovered diff from explanation: {len(diff)} bytes")
 
             if not diff:
+                print(f"[DEBUG] No diff produced. Summary: {summary[:100] if summary else 'none'}")
+                print(f"[DEBUG] Explanation: {explanation[:200] if explanation else 'none'}")
                 outcome["message"] = "no diff produced by model"
                 results.append(outcome)
                 continue
@@ -1346,8 +1364,10 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 continue
 
             try:
+                print(f"[DEBUG] Validating diff (first 500 chars):\n{diff[:500]}")
                 _validate_unified_diff(diff)
                 paths = _all_targets_allowed(diff)
+                print(f"[DEBUG] Extracted paths from diff: {paths}")
                 outcome["paths"] = paths
                 learning_ctx.file_path = paths[0] if paths else ""
 

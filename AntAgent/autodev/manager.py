@@ -1679,8 +1679,10 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
             used_engine = "llama"
 
             # Validate diff format
+            mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
+            engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "LLaMA"
             if diff_text and diff_text.lstrip().startswith("diff --git"):
-                print(f"[ENGINE] LLaMA successful")
+                print(f"[ENGINE] {engine_label} successful")
 
                 # Extra validation: check if mentioned file is in our targets
                 mentioned_files = re.findall(r'diff --git a/([^\s]+)', diff_text)
@@ -1689,18 +1691,20 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
                     if not any(mentioned in path or path in mentioned for path in target_paths):
                         print(f"[WARNING] Diff mentions {mentioned} but not in targets: {target_paths}")
             else:
-                print(f"[ENGINE] LLaMA produced invalid diff format")
+                print(f"[ENGINE] {engine_label} produced invalid diff format")
                 diff_text = ""
 
     except Exception as e:
-        print(f"[ENGINE] LLaMA error: {e}")
+        mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
+        engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "LLaMA"
+        print(f"[ENGINE] {engine_label} error: {e}")
         used_engine = None
 
     # Step 9: OpenAI fallback (only if LLaMA failed)
     if not diff_text or not diff_text.lstrip().startswith("diff --git"):
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
-            print("[ENGINE] Using OpenAI as fallback")
+            print("[ENGINE] Using DeepSeek/OpenAI as fallback")
             try:
                 import requests, json
 
@@ -1780,6 +1784,24 @@ OUTPUT ONLY THE DIFF, NO OTHER TEXT."""},
                     diff_text = resp.json()["choices"][0]["message"]["content"]
                     used_engine = "openai"
                     print(f"[ENGINE] OpenAI diff response (first 300 chars): {diff_text[:300]}")
+                    # Extract and strictly validate the fallback diff
+                    candidate = _extract_unified_diff(diff_text)
+                    if candidate:
+                        try:
+                            rel = _first_diff_target_path(candidate)
+                            if rel:
+                                abs_path = str((_repo_root() / rel).as_posix())
+                                fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                                if fixed:
+                                    candidate = fixed
+                        except Exception:
+                            pass
+                        try:
+                            _validate_unified_diff(candidate)
+                            diff_text = candidate
+                        except Exception:
+                            print("[DEBUG] Fallback produced invalid diff after validation")
+                            diff_text = ""
                 else:
                     print(f"[ENGINE] OpenAI diff request failed: {resp.status_code} - {resp.text[:200]}")
 

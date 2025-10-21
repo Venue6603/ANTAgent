@@ -7,7 +7,7 @@ import os, re, json, requests
 from typing import Dict, Tuple, List
 from pathlib import Path
 import traceback  # <-- needed for error formatting
-from llama_cpp import Llama
+from ollama_adapter import Llama
 import os
 import re as _re
 from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths
@@ -290,7 +290,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     # --- Try LLaMA first (preferred path)
     try:
         from pathlib import Path
-        from llama_cpp import Llama
+        from ollama_adapter import Llama
 
         model_path = os.getenv("ANT_LLAMA_MODEL_PATH")
         if model_path and Path(model_path).exists():
@@ -1468,7 +1468,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     explanation = ""
 
     try:
-        from llama_cpp import Llama
+        from ollama_adapter import Llama
 
         model_path = os.getenv("ANT_LLAMA_MODEL_PATH")
         if model_path and Path(model_path).exists():

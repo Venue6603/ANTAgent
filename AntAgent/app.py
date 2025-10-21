@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 try:
-    from llama_cpp import Llama
+    from ollama_adapter import Llama
 except Exception:
     Llama = None  # type: ignore
 
@@ -248,7 +248,7 @@ def _enrich_constraints(payload: dict) -> dict:
 # --- Lightweight code browsing helpers (no manager.py dependency) ---
 
 try:
-    from llama_cpp import Llama  # noqa: F401
+    from ollama_adapter import Llama  # noqa: F401
     _LLAMA_IMPORT_OK = True
 except Exception:
     _LLAMA_IMPORT_OK = False
@@ -813,7 +813,7 @@ async def status():
     # Check llama-cpp model path + importability
     llama_model_path = os.getenv("ANT_LLAMA_MODEL_PATH")
     try:
-        from llama_cpp import Llama  # may raise if not installed
+        from ollama_adapter import Llama  # may raise if not installed
         llama_lib_imported = True
     except Exception:
         llama_lib_imported = False

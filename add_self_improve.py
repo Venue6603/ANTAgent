@@ -24,7 +24,7 @@ MODEL_PATH = os.environ.get("ANT_LLAMA_MODEL_PATH")
 
 def _llama():
     if MODEL_PATH:
-        from llama_cpp import Llama
+        from ollama_adapter import Llama
         return Llama(model_path=MODEL_PATH, n_ctx=8192, n_gpu_layers=-1, verbose=False)
     return None
 

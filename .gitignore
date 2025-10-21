@@ -1,0 +1,31 @@
+# venvs
+.venv/
+.venv311/
+venv/
+venv311/
+**/.venv/
+**/venv/
+
+# model/data/checkpoints
+models/
+wheels/
+**/models/**
+checkpoints/
+**/checkpoints/**
+weights/
+**/weights/**
+datasets/
+**/datasets/**
+
+# common big file types
+*.gguf
+*.safetensors
+*.pt
+*.bin
+*.ckpt
+*.onnx
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="005bdada-7d39-4969-aec1-b2f71c049578" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.ant_memory/events.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/chat_history.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/context_memory.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/failure_patterns.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/lessons.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/pattern_recognition.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/self_improve_history.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.antagent/successful_patterns.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/.coverage" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/allowlist.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/checks.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/diff_doctor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/manager.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/manager_learning.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/patch.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/sandbox.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/tests/test_diff_extract.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/costing/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/costing/bom.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/guards.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/planning/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/planning/compliance.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/planning/planner.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/planning/timeline.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/rag/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/rag/extract.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/rag/ingest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/reporter.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/templates/executive_summary.md.j2" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/self_improve_patch.diff" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/checks.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/extract.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/ingest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Start-AntSelfImprove.ps1" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/add_self_improve.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/debug_patch.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/download_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/generated_diff.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/get_best_qwen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/patch.diff" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/router_llm.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/self_improve_patch.diff" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test.patch" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_diff.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_patch.ps1" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_request.ps1" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_self_improve.ps1" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;Venue6603&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/Venue6603/ANTAgent.git&quot;,
+    &quot;accountId&quot;: &quot;d5a40eac-8b86-4334-aea2-1618b424f433&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6
+}</component>
+  <component name="ProjectId" id="34DhhFENY4VMlmMisbemI0VW4rk" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.intellij.pycharm.community.ide.impl.configuration.PythonContentEntriesConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-3aa1da707db6-JavaScript-PY-252.26830.99" />
+        <option value="bundled-python-sdk-164cda30dcd9-0af03a5fa574-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26830.99" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="005bdada-7d39-4969-aec1-b2f71c049578" name="Changes" comment="" />
+      <created>1760754166483</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1760754166483</updated>
+      <workItem from="1760754167544" duration="1294000" />
+      <workItem from="1760818000657" duration="8485000" />
+      <workItem from="1760933604385" duration="586000" />
+      <workItem from="1760937032291" duration="1498000" />
+      <workItem from="1761020573477" duration="142000" />
+      <workItem from="1761020760238" duration="471000" />
+      <workItem from="1761021433508" duration="16000" />
+      <workItem from="1761021469628" duration="240000" />
+      <workItem from="1761021724956" duration="1052000" />
+      <workItem from="1761022804624" duration="1271000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="MARK_IGNORED_AS_EXCLUDED" value="true" />
+  </component>
+</project>

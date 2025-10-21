@@ -159,7 +159,8 @@ def _extract_unified_diff(text: str) -> str:
     if not text:
         return ""
 
-    # Strip markdown code fences (```diff, ```patch, or just ```)
+    # Normalize newlines and strip markdown code fences (```diff, ```patch, or just ```)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"^```(?:diff|patch)?\s*\n", "", text, flags=re.MULTILINE)
     text = re.sub(r"\n```\s*$", "", text)
     text = text.strip()
@@ -187,9 +188,9 @@ def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
     """
     Read the contents of the specified files.
     Fix malformed diffs that try to prepend lines to files.
-    The @@ -1,0 +1,1 @@ pattern is incorrect and should include context.
+    Handle patterns like '@@ -1,0 +1,1 @@' and '@@ -0,0 +1 @@' by including proper context.
     """
-    if not diff_text or '@@ -1,0 +1,1 @@' not in diff_text:
+    if not diff_text or ('@@ -1,0 +1,1 @@' not in diff_text and '@@ -0,0 +1 @@' not in diff_text):
         return diff_text
 
     try:
@@ -220,7 +221,7 @@ def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
         hunk_fixed = False
 
         for line in lines:
-            if not hunk_fixed and line.startswith('@@') and '-1,0 +1,1' in line:
+            if not hunk_fixed and line.startswith('@@') and (('-1,0 +1,1' in line) or ('-0,0 +1' in line)):
                 # Fix this hunk header
                 new_lines.append(f'@@ -1,{context_count} +1,{context_count + 1} @@')
                 new_lines.append(f'+{added_line}')
@@ -229,12 +230,9 @@ def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
                     if i < len(original_lines):
                         new_lines.append(' ' + original_lines[i])
                 hunk_fixed = True
-
-                # Skip the original malformed hunk content
-                # Find where the next hunk or end starts
                 continue
             elif hunk_fixed and (line.startswith('+') or line.startswith('-') or line.startswith(' ')):
-                # Skip the old hunk content
+                # Skip the old hunk content for the malformed hunk
                 if not line.startswith('@@') and not line.startswith('diff --git'):
                     continue
 
@@ -428,6 +426,8 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             except Exception:
                 pass
             try:
+                # Ensure the target path exists before validating
+                preflight_verify_paths(candidate)
                 _validate_unified_diff(candidate)
                 diff = candidate
                 llama_valid = True
@@ -444,38 +444,78 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                 llama_valid = False
 
     if not llama_valid:
+        # One strict retry with self-correction before falling back
         if used_engine == "llama":
-            print("[ENGINE] llama invalid or empty diff; falling back to DeepSeek/OpenAI")
-        elif llama_reason:
-            print("[ENGINE] llama unavailable ->", llama_reason)
-
-        prompt = _render_diff_prompt(goal, constraints, files)
-        diff_text = _openai_completion_diff_only(prompt)
-        used_engine = _LAST_FALLBACK_ENGINE or "openai"
-        try:
-            label = used_engine.capitalize()
-        except Exception:
-            label = str(used_engine)
-        print(f"[ENGINE] {label} fallback used")
-
-        # Extract and validate fallback diff
-        candidate = _extract_unified_diff(diff_text)
-        if candidate:
             try:
-                rel = _first_diff_target_path(candidate)
-                if rel:
-                    abs_path = str((_repo_root() / rel).as_posix())
-                    fixed = fix_malformed_prepend_diff(candidate, abs_path)
-                    if fixed:
-                        candidate = fixed
+                from ollama_adapter import Llama as _L
+                _mp = os.getenv("ANT_LLAMA_MODEL_PATH")
+                if _mp and Path(_mp).exists():
+                    print("[ENGINE] LLaMA/DeepSeek retry: first attempt invalid; retrying with stricter format")
+                    _llm = _L(model_path=_mp, n_ctx=ctx, n_batch=batch, n_gpu_layers=gpu_layers, verbose=False)
+                    retry_system = "Return ONLY a valid unified diff that starts with 'diff --git'. No prose, no backticks."
+                    retry_user = body + "\n\nPrevious output was INVALID (missing header/hunk/path or bad context). STRICTLY follow the OUTPUT FORMAT."
+                    _res = _llm.create_chat_completion(
+                        messages=[{"role":"system","content":retry_system},{"role":"user","content":retry_user}],
+                        temperature=0.0, top_p=0.05, max_tokens=max_new,
+                    )
+                    diff_text = (_res["choices"][0]["message"]["content"] or "").strip()
+                    # Validate retry
+                    candidate = _extract_unified_diff(diff_text)
+                    if candidate:
+                        try:
+                            rel = _first_diff_target_path(candidate)
+                            if rel:
+                                abs_path = str((_repo_root() / rel).as_posix())
+                                fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                                if fixed:
+                                    candidate = fixed
+                        except Exception:
+                            pass
+                        try:
+                            preflight_verify_paths(candidate)
+                            _validate_unified_diff(candidate)
+                            diff = candidate
+                            llama_valid = True
+                            final_engine = ("deepseek" if os.path.basename(_mp).lower().find("deepseek") != -1 else "llama")
+                        except Exception:
+                            llama_valid = False
             except Exception:
                 pass
+
+        if not llama_valid:
+            if used_engine == "llama":
+                print("[ENGINE] llama invalid or empty diff; falling back to DeepSeek/OpenAI")
+            elif llama_reason:
+                print("[ENGINE] llama unavailable ->", llama_reason)
+
+            prompt = _render_diff_prompt(goal, constraints, files)
+            diff_text = _openai_completion_diff_only(prompt)
+            used_engine = _LAST_FALLBACK_ENGINE or "openai"
             try:
-                _validate_unified_diff(candidate)
-                diff = candidate
-                final_engine = used_engine
+                label = used_engine.capitalize()
             except Exception:
-                diff = ""
+                label = str(used_engine)
+            print(f"[ENGINE] {label} fallback used")
+
+            # Extract and validate fallback diff
+            candidate = _extract_unified_diff(diff_text)
+            if candidate:
+                try:
+                    rel = _first_diff_target_path(candidate)
+                    if rel:
+                        abs_path = str((_repo_root() / rel).as_posix())
+                        fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                        if fixed:
+                            candidate = fixed
+                except Exception:
+                    pass
+                try:
+                    preflight_verify_paths(candidate)
+                    _validate_unified_diff(candidate)
+                    diff = candidate
+                    final_engine = used_engine
+                except Exception:
+                    diff = ""
 
     summary = (
         f"Goal: {goal}\n"

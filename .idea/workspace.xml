@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="005bdada-7d39-4969-aec1-b2f71c049578" name="Changes" comment="" />
+    <list default="true" id="005bdada-7d39-4969-aec1-b2f71c049578" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.antagent/failure_patterns.json" beforeDir="false" afterPath="$PROJECT_DIR$/.antagent/failure_patterns.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/lessons.json" beforeDir="false" afterPath="$PROJECT_DIR$/.antagent/lessons.json" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -55,7 +58,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMConfigurable",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   }

@@ -340,6 +340,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     used_engine = "openai"
     llama_reason = None
     diff_text = ""
+    final_engine = None
 
     # --- Try LLaMA first (preferred path)
     try:
@@ -430,6 +431,15 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                 _validate_unified_diff(candidate)
                 diff = candidate
                 llama_valid = True
+                # Identify DeepSeek local model usage for clearer reporting
+                try:
+                    mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
+                    if os.path.basename(mp).lower().find("deepseek") != -1:
+                        final_engine = "deepseek"
+                    else:
+                        final_engine = "llama"
+                except Exception:
+                    final_engine = "llama"
             except Exception:
                 llama_valid = False
 
@@ -463,6 +473,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             try:
                 _validate_unified_diff(candidate)
                 diff = candidate
+                final_engine = used_engine
             except Exception:
                 diff = ""
 
@@ -470,7 +481,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
         f"Goal: {goal}\n"
         f"Targets: {', '.join(target_paths) or '(no specific paths)'}"
         f"{' [no_net_new_deps]' if constraints.get('no_net_new_deps') else ''}\n"
-        f"Engine: {used_engine}{' (llama reason: ' + llama_reason + ')' if (used_engine!='llama' and llama_reason) else ''}"
+        f"Engine: {final_engine or used_engine}{' (llama reason: ' + llama_reason + ')' if ((final_engine or used_engine) not in ('llama','deepseek') and llama_reason) else ''}"
     )
 
     if diff and diff.lstrip().startswith("diff --git"):

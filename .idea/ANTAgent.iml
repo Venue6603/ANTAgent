@@ -5,7 +5,6 @@
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/.venv311" />
       <excludeFolder url="file://$MODULE_DIR$/models" />
-      <excludeFolder url="file://$MODULE_DIR$/wheels" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.11 virtualenv at C:\Users\James\PycharmProjects\ANTAgent\.venv311" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

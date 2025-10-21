@@ -1,14 +1,13 @@
 # venvs
 .venv/
-.venv311/
 venv/
-venv311/
 **/.venv/
 **/venv/
+.venv311/
+venv311/
 
 # model/data/checkpoints
 models/
-wheels/
 **/models/**
 checkpoints/
 **/checkpoints/**

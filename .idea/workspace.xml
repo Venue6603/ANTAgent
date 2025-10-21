@@ -5,61 +5,127 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="005bdada-7d39-4969-aec1-b2f71c049578" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.ant_memory/events.jsonl" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/chat_history.jsonl" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/context_memory.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/failure_patterns.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/lessons.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/pattern_recognition.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/self_improve_history.jsonl" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.antagent/successful_patterns.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/.coverage" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/allowlist.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/checks.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/diff_doctor.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/manager_learning.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/patch.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/sandbox.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/autodev/tests/test_diff_extract.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/costing/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/costing/bom.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/guards.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/planning/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/planning/compliance.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/planning/planner.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/planning/timeline.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/rag/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/rag/extract.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/rag/ingest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/reporter.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/reporting/templates/executive_summary.md.j2" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/self_improve_patch.diff" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/checks.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/extract.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AntAgent/sequence/ingest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Start-AntSelfImprove.ps1" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/add_self_improve.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/debug_patch.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/download_model.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/generated_diff.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/get_best_qwen.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/patch.diff" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/router_llm.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/self_improve_patch.diff" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test.patch" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_diff.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_patch.ps1" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_request.ps1" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_self_improve.ps1" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore-1.0.9.dist-info/licenses/LICENSE.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/trio.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_exceptions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_ssl.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/connection.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/connection_pool.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/http11.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/http2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/http_proxy.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/interfaces.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_sync/socks_proxy.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_synchronization.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_trace.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/INSTALLER" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/METADATA" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/RECORD" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/WHEEL" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/entry_points.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx-0.28.1.dist-info/licenses/LICENSE.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/__version__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_api.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_auth.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_client.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_config.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_content.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_decoders.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_exceptions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_multipart.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_status_codes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/asgi.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/base.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/default.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/mock.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_transports/wsgi.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_types.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_urlparse.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_urls.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpx/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/INSTALLER" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/METADATA" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/RECORD" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/REQUESTED" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/WHEEL" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama-0.6.0.dist-info/licenses/LICENSE" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama/_client.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama/_types.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama/_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/ollama/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.venv311/Scripts/httpx.exe" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.ant_memory/events.jsonl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/chat_history.jsonl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/context_memory.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/failure_patterns.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/lessons.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/pattern_recognition.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/self_improve_history.jsonl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.antagent/successful_patterns.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/ANTAgent.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ANTAgent.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/.coverage" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore-1.0.9.dist-info/INSTALLER" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore-1.0.9.dist-info/METADATA" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/app.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore-1.0.9.dist-info/RECORD" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/allowlist.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/checks.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/diff_doctor.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/manager.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/manager_learning.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/patch.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/sandbox.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/tests/test_diff_extract.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/costing/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore-1.0.9.dist-info/WHEEL" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/costing/bom.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/guards.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/planning/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/planning/compliance.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/planning/planner.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/planning/timeline.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/rag/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/rag/extract.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/rag/ingest.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/reporting/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/reporting/reporter.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/reporting/templates/executive_summary.md.j2" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/connection.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/self_improve_patch.diff" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/sequence/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/connection_pool.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/sequence/checks.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/sequence/extract.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/http11.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AntAgent/sequence/ingest.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/http2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Start-AntSelfImprove.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/http_proxy.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/add_self_improve.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug_patch.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/download_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/interfaces.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/generated_diff.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/get_best_qwen.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_async/socks_proxy.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/patch.diff" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/router_llm.py" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/anyio.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/self_improve_patch.diff" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/auto.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test.patch" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/base.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_diff.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_patch.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/mock.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_request.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/.venv311/Lib/site-packages/httpcore/_backends/sync.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_self_improve.ps1" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -96,25 +162,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.intellij.pycharm.community.ide.impl.configuration.PythonContentEntriesConfigurable",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.intellij.pycharm.community.ide.impl.configuration.PythonContentEntriesConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

@@ -1680,7 +1680,7 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
 
             # Validate diff format
             mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
-            engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "LLaMA"
+            engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "DeepSeek"
             if diff_text and diff_text.lstrip().startswith("diff --git"):
                 print(f"[ENGINE] {engine_label} successful")
 
@@ -1696,7 +1696,7 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
 
     except Exception as e:
         mp = os.getenv("ANT_LLAMA_MODEL_PATH") or ""
-        engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "LLaMA"
+        engine_label = "DeepSeek" if os.path.basename(mp).lower().find("deepseek") != -1 else "DeepSeek"
         print(f"[ENGINE] {engine_label} error: {e}")
         used_engine = None
 
@@ -1704,7 +1704,7 @@ Output ONLY the raw diff. No markdown, no explanations, no backticks."""
     if not diff_text or not diff_text.lstrip().startswith("diff --git"):
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
-            print("[ENGINE] Using DeepSeek/OpenAI as fallback")
+            print("[ENGINE] Using OpenAI as fallback")
             try:
                 import requests, json
 

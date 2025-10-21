@@ -410,10 +410,32 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     except Exception as e:
         llama_reason = f"{type(e).__name__}: {e}"
 
-    # --- Fallback to OpenAI if no valid diff ---
-    if used_engine != "llama" or not diff_text or not diff_text.lstrip().startswith("diff --git"):
+    # Validate LLaMA diff; if invalid, fall back to DeepSeek/OpenAI
+    diff = ""
+    llama_valid = False
+    if used_engine == "llama":
+        candidate = _extract_unified_diff(diff_text)
+        if candidate:
+            # Try to fix a known malformed prepend hunk, then validate strictly
+            try:
+                rel = _first_diff_target_path(candidate)
+                if rel:
+                    abs_path = str((_repo_root() / rel).as_posix())
+                    fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                    if fixed:
+                        candidate = fixed
+            except Exception:
+                pass
+            try:
+                _validate_unified_diff(candidate)
+                diff = candidate
+                llama_valid = True
+            except Exception:
+                llama_valid = False
+
+    if not llama_valid:
         if used_engine == "llama":
-            print("[ENGINE] llama produced no valid diff; falling back to OpenAI")
+            print("[ENGINE] llama invalid or empty diff; falling back to DeepSeek/OpenAI")
         elif llama_reason:
             print("[ENGINE] llama unavailable ->", llama_reason)
 
@@ -426,12 +448,29 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             label = str(used_engine)
         print(f"[ENGINE] {label} fallback used")
 
-    diff = _extract_unified_diff(diff_text)
+        # Extract and validate fallback diff
+        candidate = _extract_unified_diff(diff_text)
+        if candidate:
+            try:
+                rel = _first_diff_target_path(candidate)
+                if rel:
+                    abs_path = str((_repo_root() / rel).as_posix())
+                    fixed = fix_malformed_prepend_diff(candidate, abs_path)
+                    if fixed:
+                        candidate = fixed
+            except Exception:
+                pass
+            try:
+                _validate_unified_diff(candidate)
+                diff = candidate
+            except Exception:
+                diff = ""
+
     summary = (
         f"Goal: {goal}\n"
         f"Targets: {', '.join(target_paths) or '(no specific paths)'}"
         f"{' [no_net_new_deps]' if constraints.get('no_net_new_deps') else ''}\n"
-        f"Engine: {used_engine}{' (llama reason: ' + llama_reason + ')' if (used_engine=='openai' and llama_reason) else ''}"
+        f"Engine: {used_engine}{' (llama reason: ' + llama_reason + ')' if (used_engine!='llama' and llama_reason) else ''}"
     )
 
     if diff and diff.lstrip().startswith("diff --git"):

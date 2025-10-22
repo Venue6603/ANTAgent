@@ -719,9 +719,13 @@ def _allowlist_path() -> Path:
 def _allowed_paths() -> list[str]:
     p = _allowlist_path()
     if not p.exists():
+        print(f"[DEBUG] Allowlist not found at {p}")
         return []
     lines = [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()]
-    return [ln for ln in lines if ln and not ln.startswith("#")]
+    allowed = [ln for ln in lines if ln and not ln.startswith("#")]
+    print(f"[DEBUG] Allowed paths: {allowed}")
+    return allowed
+
 def _normalize_targets_to_allowlist(targets: list[str], allowed: list[str]) -> list[str]:
     if not targets:
         return []

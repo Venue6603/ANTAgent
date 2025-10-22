@@ -1391,6 +1391,8 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
 
         for i in range(1, rounds + 1):
             print(f"\n[ATTEMPT {i}/{rounds}] Starting...")
+            learning_ctx = None
+            recorded = False
 
             # --- Intelligent target path resolution ---
             target_paths = []
@@ -1546,21 +1548,7 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 }
                 results.append(outcome)
                 continue
-            from .manager import _debug_collector  # filled by propose_patch_with_explanation
-            learning_ctx = LearningContext(
-                timestamp=time.time(),
-                goal=objective,
-                file_path=target_paths[0] if target_paths else "",
-                success=False,
-                diff_size=len(diff or ""),
-                diff_content=diff or "",
-                context_lines_used=constraints["require_context_lines"],
-                anchors_used=constraints.get("must_anchor_any", [])[:10],
-                retry_count=i - 1,
-                llm_confidence=0.0,
-                llm_explanation=_debug_collector.get("llm_explanation", "none"),
-                engine_used=_debug_collector.get("engine_used", "unknown"),
-            )
+
             # Extract the three parts: summary, diff, explanation
             summary: str = ""
             explanation: str = ""
@@ -1589,9 +1577,27 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 print(f"[DEBUG] No diff produced. Summary: {summary[:100] if summary else 'none'}")
                 print(f"[DEBUG] Explanation: {explanation[:200] if explanation else 'none'}")
 
+                if learning_ctx is None:
+                    from .manager import _debug_collector
+                    learning_ctx = LearningContext(
+                        timestamp=time.time(),
+                        goal=objective,
+                        file_path=target_paths[0] if target_paths else "",
+                        success=False,
+                        diff_size=0,
+                        diff_content="",
+                        context_lines_used=constraints["require_context_lines"],
+                        anchors_used=constraints.get("must_anchor_any", [])[:10],
+                        retry_count=i - 1,
+                        llm_confidence=0.0,
+                        llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                        engine_used=_debug_collector.get("engine_used", "unknown"),
+                    )
+
                 learning_ctx.error_type = "no_diff_generated"
                 learning_ctx.error_detail = "Model produced no diff"
-                learning.learn_from_attempt(learning_ctx)  # <-- this writes lessons + failure_patterns
+                learning.learn_from_attempt(learning_ctx)
+                recorded = True
 
                 outcome = {"applied": False, "kept": False, "message": "no diff produced by model", "results": []}
                 results.append(outcome)
@@ -1600,6 +1606,23 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
 
             # Update learning context with diff info
             learning_ctx.diff_size = len(diff)
+
+            from .manager import _debug_collector  # filled by propose_patch_with_explanation
+            learning_ctx = LearningContext(
+                timestamp=time.time(),
+                goal=objective,
+                file_path=target_paths[0] if target_paths else "",
+                success=False,
+                diff_size=len(diff or ""),
+                diff_content=diff or "",
+                context_lines_used=constraints["require_context_lines"],
+                anchors_used=constraints.get("must_anchor_any", [])[:10],
+                retry_count=i - 1,
+                llm_confidence=0.0,
+                llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                engine_used=_debug_collector.get("engine_used", "unknown"),
+            )
+
             if explanation:
                 # Simple confidence heuristic based on explanation clarity
                 learning_ctx.llm_confidence = 0.7 if "line" in explanation.lower() else 0.3
@@ -1721,7 +1744,12 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 learning.learn_from_attempt(learning_ctx)
             except Exception as e:
                 print(f"[WARN] Could not save learning record: {e}")
-
+            if learning_ctx is not None and not recorded:
+                try:
+                    learning.learn_from_attempt(learning_ctx)
+                    recorded = True
+                except Exception as e:
+                    print(f"[WARN] fallback learn_from_attempt failed: {e}")
             # Stop if successful
             if outcome.get("kept"):
                 break

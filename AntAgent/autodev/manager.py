@@ -154,24 +154,23 @@ OUTPUT FORMAT (strict):
 - Ensure the patch applies cleanly with 'git apply'
 """
 
+
 def _extract_unified_diff(text: str) -> str:
     """Extract unified diff from possibly markdown-wrapped text."""
     if not text:
         return ""
 
-    # First, check if there are line numbers that need cleaning (like "15: # Random animal")
+    # First, check if there are line numbers that need cleaning
     if re.search(r'^\s*\d+:', text, re.MULTILINE):
         print("[DEBUG] Cleaning line numbers from diff...")
         lines = []
         for line in text.split('\n'):
             # Remove line numbers but preserve diff markers
             if re.match(r'^\s*\d+:\s*[+-]', line):
-                # This is a diff line with a line number, keep the +/- marker
                 marker = '+' if '+' in line[:20] else '-'
                 content = re.sub(r'^\s*\d+:\s*[+-]\s*', '', line)
                 lines.append(marker + content)
             elif re.match(r'^\s*\d+:', line):
-                # This is a context line with a line number, add space prefix
                 content = re.sub(r'^\s*\d+:\s*', '', line)
                 lines.append(' ' + content)
             else:
@@ -189,8 +188,37 @@ def _extract_unified_diff(text: str) -> str:
     if not m:
         return ""
 
-    # Extract from the diff start to the end
+    # Extract from the diff start
     diff_content = text[m.start():]
+
+    # IMPORTANT: Stop at the end of the diff hunk
+    # A diff ends when we hit a line that doesn't start with a valid marker
+    lines = diff_content.split('\n')
+    clean_lines = []
+    in_hunk = False
+
+    for line in lines:
+        # Track when we're in a hunk
+        if line.startswith('@@'):
+            in_hunk = True
+            clean_lines.append(line)
+        elif in_hunk:
+            # Valid hunk lines start with space, -, or +
+            if line and not line[0] in ' -+':
+                # Check if this might be a header line we should keep
+                if any(line.startswith(x) for x in ['diff --git', '---', '+++', 'index']):
+                    clean_lines.append(line)
+                    in_hunk = False
+                else:
+                    # This is probably explanatory text, stop here
+                    break
+            else:
+                clean_lines.append(line)
+        else:
+            # Not in a hunk, keep header lines
+            clean_lines.append(line)
+
+    diff_content = '\n'.join(clean_lines).strip()
 
     # Validate it has the essential components
     if not re.search(r"(?m)^---", diff_content):
@@ -200,8 +228,7 @@ def _extract_unified_diff(text: str) -> str:
     if not re.search(r"(?m)^@@", diff_content):
         return ""
 
-    return diff_content.strip()
-
+    return diff_content
 
 def fix_malformed_prepend_diff(diff_text: str, target_path: str) -> str:
     """

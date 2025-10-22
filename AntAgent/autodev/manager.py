@@ -222,11 +222,26 @@ def _extract_unified_diff(text: str) -> str:
 
     # Validate it has the essential components
     if not re.search(r"(?m)^---", diff_content):
+        print("[DEBUG] Diff extraction failed: missing '---' header")
         return ""
     if not re.search(r"(?m)^\+\+\+", diff_content):
+        print("[DEBUG] Diff extraction failed: missing '+++' header")
         return ""
     if not re.search(r"(?m)^@@", diff_content):
+        print("[DEBUG] Diff extraction failed: missing '@@' hunk")
         return ""
+
+    # Check if the diff appears to be truncated (ends abruptly)
+    if diff_content and not diff_content.endswith('\n') and len(diff_content.split('\n')) > 1:
+        last_line = diff_content.split('\n')[-1]
+        # If the last line doesn't end with a newline and doesn't look like a complete diff line
+        if last_line and not last_line.startswith((' ', '-', '+', '@@', 'diff', '---', '+++', 'index')):
+            print(f"[DEBUG] Diff appears truncated, last line: '{last_line[:50]}...'")
+            # Try to salvage by removing the incomplete last line
+            lines = diff_content.split('\n')
+            if len(lines) > 1:
+                diff_content = '\n'.join(lines[:-1])
+                print(f"[DEBUG] Salvaged diff by removing incomplete last line")
 
     return diff_content
 
@@ -1534,6 +1549,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             "that can be applied with `git apply`.\n\n"
             "STRICT RULES:\n"
             "- Output ONLY the diff. No prose, no code fences.\n"
+            "- Generate a COMPLETE diff - do not truncate or cut off mid-line.\n"
             f"- Use exactly this header format:\n"
             f"  diff --git a/{path} b/{path}\n"
             "  index 0000000..0000000 100644\n"
@@ -1542,6 +1558,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             "- Include a proper @@ hunk header with line numbers.\n"
             "- Provide at least one unchanged context line before and after the edited line.\n"
             "- Edit only what the objective requires.\n"
+            "- Ensure the diff ends properly with complete lines.\n"
         )
 
         # If we know the exact line, force the model to anchor on it
@@ -1594,7 +1611,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                 d.startswith(f"diff --git a/{path} b/{path}") and
                 ("--- a/" in d and "+++ b/" in d) and
                 "@@" in d and
-                any(ch in d for ch in ("\n+ ", "\n- ", "+\n", "-\n"))
+                any(ch in d for ch in (chr(10)+"+ ", chr(10)+"- ", "+"+chr(10), "-"+chr(10)))
             )
 
         if candidate and _basic_diff_ok(candidate):
@@ -1632,9 +1649,17 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
         else:
             print("[ENGINE] Could not extract valid diff from LLM output")
             if candidate:
-                print(f"[DEBUG] Basic diff check failed for candidate (first 200 chars):\n{candidate[:200]}")
+                print(f"[DEBUG] Basic diff check failed for candidate (first 500 chars):\n{candidate[:500]}")
+                print(f"[DEBUG] Candidate length: {len(candidate)} chars")
+                print(f"[DEBUG] Basic diff check details:")
+                print(f"  - Starts with 'diff --git a/{path} b/{path}': {candidate.startswith(f'diff --git a/{path} b/{path}')}")
+                print(f"  - Contains '--- a/': {'--- a/' in candidate}")
+                print(f"  - Contains '+++ b/': {'+++ b/' in candidate}")
+                print(f"  - Contains '@@': {'@@' in candidate}")
+                print(f"  - Contains change markers: {any(ch in candidate for ch in (chr(10)+'+ ', chr(10)+'- ', '+'+chr(10), '-'+chr(10)))}")
             else:
                 print("[DEBUG] No candidate diff extracted from LLM response")
+                print(f"[DEBUG] Raw LLM response (first 300 chars):\n{full_response[:300]}")
 
     except Exception as e:
         print(f"[ENGINE] LLM error: {e}")

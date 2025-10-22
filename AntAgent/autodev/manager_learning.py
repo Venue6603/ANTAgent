@@ -239,7 +239,19 @@ class EnhancedLearningSystem:
         self.context_memory = self.load_context_memory()
 
     def ensure_dirs(self):
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        """Ensure all artifacts live under REPO_ROOT/.antagent (not process CWD)."""
+        global LOG_DIR, HISTORY, LESSONS, PATTERNS, SUCCESS_DB, FAILURE_DB, CONTEXT_MEMORY, _QUEUE_PATH
+        base = _REPO_ROOT / ".antagent"
+        base.mkdir(parents=True, exist_ok=True)
+
+        LOG_DIR = base
+        HISTORY = base / "self_improve_history.jsonl"
+        LESSONS = base / "lessons.json"
+        PATTERNS = base / "pattern_recognition.json"
+        SUCCESS_DB = base / "successful_patterns.json"
+        FAILURE_DB = base / "failure_patterns.json"
+        CONTEXT_MEMORY = base / "context_memory.json"
+        _QUEUE_PATH = base / "si_queue.jsonl"
 
     def load_lessons(self) -> Dict:
         if LESSONS.exists():

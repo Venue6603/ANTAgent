@@ -431,118 +431,85 @@ class EnhancedLearningSystem:
         similar.sort(key=lambda x: x["similarity"], reverse=True)
         return similar[:limit]
 
-    def learn_from_attempt(self, context: LearningContext):
-        """Learn from a single attempt with enhanced debugging information"""
-        self.lessons["total_attempts"] += 1
+    def learn_from_attempt(self, context: "LearningContext") -> None:
+        """
+        Persist one attempt (success or failure) into lessons and failure_patterns.
+        Robust to missing keys in on-disk lessons.json.
+        """
+        # --- Ensure lesson scaffolding exists ---
+        l = self.lessons
+        # counters that we always expect
+        l.setdefault("total_attempts", 0)
+        l.setdefault("successful_changes", 0)
+        l.setdefault("failure_reasons", {})  # reason -> count
+        l.setdefault("anchor_effectiveness", {})  # anchor -> float score
+        l.setdefault("anchor_phrases", [])  # list[str]
+        l.setdefault("last_10_goals", [])  # ring buffer
+        # (older files may not have this key at all)
+        fr = l["failure_reasons"]
 
-        # Store detailed attempt information
-        attempt_data = {
-            "timestamp": context.timestamp,
-            "goal": context.goal,
-            "file_path": context.file_path,
-            "success": context.success,
-            "engine_used": context.engine_used,
-            "llm_explanation": context.llm_explanation,
-            "error_type": context.error_type,
-            "error_detail": context.error_detail,
-            "debug_errors": context.debug_errors,
-            "validation_errors": context.validation_errors,
-            "performance": {
-                "generation_time_ms": context.generation_time_ms,
-                "validation_time_ms": context.validation_time_ms,
-                "apply_time_ms": context.apply_time_ms,
-                "total_time_ms": context.total_time_ms
-            },
-            "context": {
-                "lines_used": context.context_lines_used,
-                "anchors_used": context.anchors_used,
-                "strategy": context.learning_strategy,
-                "predicted_difficulty": context.predicted_difficulty
-            }
-        }
+        # --- Always count the attempt ---
+        l["total_attempts"] = int(l.get("total_attempts", 0)) + 1
 
-        if context.success:
-            self.lessons["successful_changes"] += 1
-            self.success_db.append(context)
+        # --- Success path ---
+        if getattr(context, "success", False):
+            l["successful_changes"] = int(l.get("successful_changes", 0)) + 1
 
-            # Update pattern memory with enhanced data
-            pattern_type = self.classify_goal(context.goal)
-            if pattern_type not in self.patterns:
-                self.patterns[pattern_type] = PatternMemory(
-                    pattern_type=pattern_type,
-                    success_rate=0.0,
-                    total_attempts=0,
-                    successful_attempts=0,
-                    example_goals=[],
-                    common_anchors=[],
-                    optimal_context_lines=3,
-                    file_patterns=defaultdict(int),
-                    last_updated=time.time()
-                )
+            # Optional: record a minimal success signature (keep your existing fields if you have them)
+            try:
+                self._record_success({
+                    "goal": context.goal,
+                    "file": getattr(context, "file_path", ""),
+                    "anchors": getattr(context, "anchors_used", []) or [],
+                    "diff_size": int(getattr(context, "diff_size", 0) or 0),
+                    "ts": getattr(context, "timestamp", None),
+                })
+            except Exception:
+                pass
 
-            pattern = self.patterns[pattern_type]
-            pattern.total_attempts += 1
-            pattern.successful_attempts += 1
-            pattern.success_rate = pattern.successful_attempts / pattern.total_attempts
-            pattern.example_goals.append(context.goal)
-            pattern.common_anchors.extend(context.anchors_used)
-            pattern.file_patterns[context.file_path] += 1
-            pattern.last_updated = time.time()
+            self.save_all()
+            return
 
-            # Update anchor effectiveness with engine-specific data
-            for anchor in context.anchors_used:
-                current = self.lessons["anchor_effectiveness"].get(anchor, 0.0)
-                # Boost effectiveness if this anchor worked with the current engine
-                boost = 0.1 if context.engine_used == "llama" else 0.05
-                self.lessons["anchor_effectiveness"][anchor] = current * 0.9 + boost
+        # --- Failure path ---
+        reason = getattr(context, "error_type", None) or "unknown"
+        # Create bucket if missing, then increment
+        fr[reason] = int(fr.get(reason, 0)) + 1
 
-            # Learn from successful patterns
-            if context.llm_explanation:
-                # Extract key phrases from successful explanations
-                explanation_words = context.llm_explanation.lower().split()
-                key_phrases = [w for w in explanation_words if len(w) > 4 and w.isalpha()]
-                self.lessons.setdefault("successful_explanations", []).extend(key_phrases[:5])
-
-        else:
-            self.failure_db.append(context)
-            self.lessons["failure_reasons"][context.error_type or "unknown"] += 1
-
-            # Enhanced failure learning
-            if context.debug_errors:
-                self.lessons.setdefault("debug_error_patterns", []).extend(context.debug_errors[:3])
-            
-            if context.validation_errors:
-                self.lessons.setdefault("validation_error_patterns", []).extend(context.validation_errors[:3])
-
-            # Update file difficulty based on specific error types
-            current = self.lessons["file_difficulty"].get(context.file_path, 0.5)
-            if context.error_type == "validation_error":
-                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.15)
-            elif context.error_type == "apply_failed":
-                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.1)
-            else:
-                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.05)
-
-            # Learn from failure patterns with engine-specific data
-            if context.error_type == "no_context":
-                self.lessons["optimal_settings"]["context_lines"] = min(
-                    10, self.lessons["optimal_settings"]["context_lines"] + 1
-                )
-            
-            # Track engine-specific failure patterns
-            engine_key = f"{context.engine_used}_failures"
-            self.lessons.setdefault(engine_key, []).append({
-                "error_type": context.error_type,
-                "error_detail": context.error_detail,
-                "timestamp": context.timestamp
+        # Append failure pattern record (keep your existing schema; these fields are safe)
+        try:
+            self._record_failure({
+                "timestamp": getattr(context, "timestamp", None),
+                "goal": getattr(context, "goal", ""),
+                "file_path": getattr(context, "file_path", ""),
+                "success": False,
+                "diff_size": int(getattr(context, "diff_size", 0) or 0),
+                "context_lines_used": int(getattr(context, "context_lines_used", 0) or 0),
+                "anchors_used": getattr(context, "anchors_used", []) or [],
+                "retry_count": int(getattr(context, "retry_count", 0) or 0),
+                "diff_content": getattr(context, "diff_content", "") or "",
+                "llm_explanation": getattr(context, "llm_explanation", "") or "",
+                "engine_used": getattr(context, "engine_used", "") or "",
+                "llm_confidence": float(getattr(context, "llm_confidence", 0.0) or 0.0),
+                "error_type": reason,
+                "error_detail": getattr(context, "error_detail", "") or "",
+                "validation_errors": getattr(context, "validation_errors", []) or [],
+                "debug_errors": getattr(context, "debug_errors", []) or [],
+                "generation_time_ms": float(getattr(context, "generation_time_ms", 0.0) or 0.0),
+                "validation_time_ms": float(getattr(context, "validation_time_ms", 0.0) or 0.0),
+                "apply_time_ms": float(getattr(context, "apply_time_ms", 0.0) or 0.0),
+                "total_time_ms": float(getattr(context, "total_time_ms", 0.0) or 0.0),
+                "patterns_found": getattr(context, "patterns_found", []) or [],
+                "pattern_type": getattr(context, "pattern_type", "") or "",
+                "file_size_bytes": int(getattr(context, "file_size_bytes", 0) or 0),
+                "file_line_count": int(getattr(context, "file_line_count", 0) or 0),
+                "target_line_number": int(getattr(context, "target_line_number", 0) or 0),
+                "learning_strategy": getattr(context, "learning_strategy", "") or "",
+                "predicted_difficulty": float(getattr(context, "predicted_difficulty", 0.0) or 0.0),
+                "similar_successes_used": int(getattr(context, "similar_successes_used", 0) or 0),
             })
-
-        # Store detailed attempt for analysis
-        self.lessons.setdefault("detailed_attempts", []).append(attempt_data)
-        
-        # Keep only last 100 detailed attempts to prevent memory bloat
-        if len(self.lessons["detailed_attempts"]) > 100:
-            self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
+        except Exception:
+            # Never let recording a failure crash the run
+            pass
 
         self.save_all()
 

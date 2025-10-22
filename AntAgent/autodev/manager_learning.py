@@ -973,32 +973,64 @@ def queue_len() -> int:
         return 0
     return sum(1 for _ in _QUEUE_PATH.open("r", encoding="utf-8"))
 
-def load_lessons() -> dict:
-    if _LESSONS_PATH.exists():
+def _load_lessons() -> Dict[str, Any]:
+    _ensure_dir()
+    data: Dict[str, Any] = {}
+    if LESSONS.exists():
         try:
-            return json.loads(_LESSONS_PATH.read_text(encoding="utf-8"))
+            data = json.loads(LESSONS.read_text(encoding="utf-8"))
         except Exception:
-            return {}
-    return {}
+            data = {}
+
+    # Start from DEFAULT, shallow-merge existing keys, and ensure required shapes
+    d = json.loads(json.dumps(DEFAULT))  # safe copy
+    for k, v in data.items():
+        if k == "counters" and isinstance(v, dict):
+            # merge counters individually
+            d["counters"].update({kk: int(vv) for kk, vv in v.items() if isinstance(vv, (int, float))})
+        else:
+            d[k] = v
+
+    # Ensure required keys exist
+    d.setdefault("counters", {}).update({kk: d["counters"].get(kk, 0) for kk in DEFAULT["counters"].keys()})
+    d.setdefault("anchor_phrases", [])
+    d.setdefault("last_10_goals", [])
+
+    return d
 
 def save_lessons(d: dict) -> None:
     _LESSONS_PATH.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
 
-def update_lessons(key: str, payload: dict) -> None:
-    d = load_lessons()
-    bucket = d.setdefault(key, [])
-    bucket.append({"ts": time.time(), **(payload or {})})
-    # optional: maintain derived anchor set
-    if key == "anchor_phrase":
-        anchors = set(d.get("anchor_phrases", []))
-        val = payload.get("value")
-        if isinstance(val, str):
-            anchors.add(val)
-        d["anchor_phrases"] = sorted(anchors)
-    save_lessons(d)
+def update_lessons(event: str, payload: Dict[str, Any]) -> None:
+    """
+    Update counters and anchor phrases based on events.
+    events: top_insert, empty_diff, no_effect, wrong_scope, bad_hunk
+    payload may include: goal, must_anchor_any, offending_lines, context_line, file_path
+    """
+    d = _load_lessons()
+    c = d.setdefault("counters", {k: 0 for k in DEFAULT["counters"]})  # <— robust
+
+    if event == "top_insert":
+        c["top_insert_detected"] += 1
+        _merge_anchors(d, ['"""', "import ", "from "])
+    elif event == "empty_diff":
+        c["empty_diff"] += 1
+    elif event == "no_effect":
+        c["apply_success_but_no_change"] += 1
+    elif event == "wrong_scope":
+        c["wrong_scope_edit"] += 1
+        _merge_anchors(d, _extract_likely_anchors(payload.get("goal", "")))
+    elif event == "bad_hunk":
+        c["bad_hunk_context"] += 1
+
+    g = payload.get("goal", "")
+    if g:
+        d["last_10_goals"] = (d.get("last_10_goals") or [])[-9:] + [g]
+
+    _save_lessons(d)
 
 def get_lessons() -> dict:
-    return load_lessons()
+    return _load_lessons()
 
 def _iter_repo_py_files(root: Path) -> Iterable[Path]:
     for p in root.rglob("*.py"):
@@ -1470,18 +1502,7 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             except Exception:
                 pass
 
-            # Create learning context for this attempt
-            learning_ctx = LearningContext(
-                timestamp=time.time(),
-                goal=objective,
-                file_path=target_paths[0] if target_paths else "",
-                success=False,
-                diff_size=0,
-                context_lines_used=constraints["require_context_lines"],
-                anchors_used=constraints.get("must_anchor_any", [])[:10],  # Store top 10
-                retry_count=i - 1,
-                llm_confidence=0.0
-            )
+
 
             # --- Generate the proposed diff with enhanced prompting ---
             try:
@@ -1493,9 +1514,25 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                     enhanced_goal += hint
 
                 res = propose_patch_with_explanation(enhanced_goal, constraints)
+
             except Exception as e:
-                learning_ctx.error_type = "generation_failed"
-                learning_ctx.error_detail = str(e)
+                from .manager import _debug_collector
+                learning_ctx = LearningContext(
+                    timestamp=time.time(),
+                    goal=objective,
+                    file_path=target_paths[0] if target_paths else "",
+                    success=False,
+                    diff_size=0,
+                    diff_content="",
+                    context_lines_used=constraints["require_context_lines"],
+                    anchors_used=constraints.get("must_anchor_any", [])[:10],
+                    retry_count=i - 1,
+                    llm_confidence=0.0,
+                    llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                    engine_used=_debug_collector.get("engine_used", "unknown"),
+                    error_type="generation_failed",
+                    error_detail=str(e),
+                )
                 learning.learn_from_attempt(learning_ctx)
 
                 outcome = {
@@ -1546,6 +1583,21 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 results.append(outcome)
                 continue
 
+            from .manager import _debug_collector  # filled by propose_patch_with_explanation
+            learning_ctx = LearningContext(
+                timestamp=time.time(),
+                goal=objective,
+                file_path=target_paths[0] if target_paths else "",
+                success=False,
+                diff_size=len(diff or ""),
+                diff_content=diff or "",
+                context_lines_used=constraints["require_context_lines"],
+                anchors_used=constraints.get("must_anchor_any", [])[:10],
+                retry_count=i - 1,
+                llm_confidence=0.0,
+                llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                engine_used=_debug_collector.get("engine_used", "unknown"),
+            )
             # Update learning context with diff info
             learning_ctx.diff_size = len(diff)
             if explanation:

@@ -680,6 +680,7 @@ def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attemp
         "learning_report": learning.generate_learning_report()
     }
 
+
 def _diff_targets(udiff_text: str) -> list[str]:
     """Extract file paths from unified diff headers."""
     if not udiff_text:
@@ -687,20 +688,26 @@ def _diff_targets(udiff_text: str) -> list[str]:
 
     seen, out = set(), []
 
-    # Try strict pattern first (with backreference)
-    pats = re.findall(r"^diff --git\s+(?:a/)?([^\s]+)\s+(?:b/)?\1", udiff_text, flags=re.M)
+    # More flexible pattern to handle both "diff --git a/path b/path" and "diff --git path path"
+    # First try the standard format with a/ and b/ prefixes
+    pats = re.findall(r"^diff --git\s+a/([^\s]+)\s+b/([^\s]+)", udiff_text, flags=re.M)
 
-    # If strict pattern fails, try lenient pattern (extract b/ path)
-    if not pats:
-        # Match: diff --git a/X b/Y  (take Y, the b/ path)
-        lenient = re.findall(r"^diff --git\s+(?:a/)?[^\s]+\s+(?:b/)?([^\s]+)", udiff_text, flags=re.M)
-        pats = lenient
+    if pats:
+        # Take the b/ path (second group) from each match
+        for a_path, b_path in pats:
+            if a_path == b_path and b_path not in seen:
+                seen.add(b_path)
+                out.append(b_path.replace("\\", "/"))
+    else:
+        # Try without a/ b/ prefixes
+        pats = re.findall(r"^diff --git\s+([^\s]+)\s+([^\s]+)", udiff_text, flags=re.M)
+        for a_path, b_path in pats:
+            # Usually both paths are the same for modifications
+            if b_path not in seen:
+                seen.add(b_path)
+                out.append(b_path.replace("\\", "/"))
 
-    for p in pats:
-        if p not in seen:
-            seen.add(p)
-            out.append(p.replace("\\", "/"))
-
+    print(f"[DEBUG] Extracted paths from diff: {out}")
     return out
 
 def _project_root() -> Path:

@@ -1392,7 +1392,10 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
 
                 res_apply = apply_patch(diff)
                 if not res_apply.get("applied"):
-                    outcome["message"] = f"apply failed: {res_apply.get('message')}"
+                    print(f"[DEBUG] Apply failed with error: {res_apply.get('message', 'unknown')}")
+                    print(f"[DEBUG] Apply error details: {res_apply.get('error', 'no error details')}")
+                    outcome["message"] = f"apply failed: {res_apply.get('message', res_apply.get('error', 'unknown'))}"
+
 
                     # Learn from apply failure
                     learning_ctx.error_type = "apply_failed"

@@ -379,17 +379,27 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                     start = max(0, i - 3)
                     end = min(len(lines), i + 4)
 
+                    # Ensure we have at least one line after the change
+                    if end <= i + 1:
+                        end = min(len(lines), i + 2)
+
                     diff = f"""diff --git a/{path} b/{path}
---- a/{path}
-+++ b/{path}
-@@ -{start + 1},{end - start} +{start + 1},{end - start} @@
-"""
+                    --- a/{path}
+                    +++ b/{path}
+                    @@ -{start + 1},{end - start} +{start + 1},{end - start} @@
+                    """
                     for j in range(start, end):
                         if j == i:
                             diff += f"-{lines[j]}\n"
                             diff += f"+# Random animal: {new_animal}\n"
                         else:
-                            diff += f" {lines[j]}\n"
+                            # Ensure proper spacing for context lines
+                            context_line = lines[j] if j < len(lines) else ""
+                            diff += f" {context_line}\n"
+
+                    # Ensure diff ends with a newline if the last line isn't empty
+                    if not diff.endswith('\n\n'):
+                        diff = diff.rstrip() + '\n'
 
                     summary = f"Goal: {goal}\nTarget: {path} line {i + 1}\nChange: Giraffe -> {new_animal}"
                     explanation = f"Found '# Random animal: Giraffe' at line {i + 1} in {path}. Replacing with '# Random animal: {new_animal}'."

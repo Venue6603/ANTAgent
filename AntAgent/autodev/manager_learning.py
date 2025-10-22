@@ -1574,9 +1574,12 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             if not diff:
                 print(f"[DEBUG] No diff produced. Summary: {summary[:100] if summary else 'none'}")
                 print(f"[DEBUG] Explanation: {explanation[:200] if explanation else 'none'}")
-                if not isinstance(outcome, dict):
-                    outcome = {"applied": False, "kept": False, "message": "", "results": []}
-                outcome["message"] = "no diff produced by model"
+
+                learning_ctx.error_type = "no_diff_generated"
+                learning_ctx.error_detail = "Model produced no diff"
+                learning.learn_from_attempt(learning_ctx)  # <-- this writes lessons + failure_patterns
+
+                outcome = {"applied": False, "kept": False, "message": "no diff produced by model", "results": []}
                 results.append(outcome)
                 continue
 
@@ -1708,10 +1711,21 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 learning.learn_from_attempt(learning_ctx)
 
             results.append(outcome)
+            # --- Always record the attempt outcome before next round ---
+            try:
+                if not getattr(learning_ctx, "success", False):
+                    # Fill fallback error_type if not set
+                    if not getattr(learning_ctx, "error_type", None):
+                        learning_ctx.error_type = "unspecified_failure"
+                        learning_ctx.error_detail = outcome.get("message", "no message")
+                learning.learn_from_attempt(learning_ctx)
+            except Exception as e:
+                print(f"[WARN] Could not save learning record: {e}")
 
             # Stop if successful
             if outcome.get("kept"):
                 break
+
 
     # Generate learning summary
     learning_summary = {

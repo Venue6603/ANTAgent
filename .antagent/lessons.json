@@ -1,8 +1,8 @@
 {
-  "total_attempts": 42,
+  "total_attempts": 44,
   "successful_changes": 0,
   "failure_reasons": {
-    "validation_error": 39
+    "validation_error": 40
   },
   "anchor_effectiveness": {},
   "file_difficulty": {

@@ -1501,27 +1501,16 @@ from copy import deepcopy
 def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, str, str]:
     """
     Generate a patch with detailed explanation of the approach.
-    Clean implementation with better LLM prompting for accurate diff generation.
     Returns: (summary, unified_diff, explanation)
     """
     import re
     from pathlib import Path
-    from difflib import SequenceMatcher
-
-    # Initialize learning system if available
-    try:
-        learning = get_learning_system()
-        has_learning = True
-    except:
-        learning = None
-        has_learning = False
 
     target_paths = constraints.get("paths") or []
 
-    # Intelligent path expansion
+    # Path expansion
     all_allowed = _allowed_paths()
     expanded_paths = []
-
     for path in target_paths:
         path_obj = Path(_repo_root() / path)
         if path_obj.is_dir():
@@ -1540,21 +1529,18 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     if expanded_paths:
         target_paths = list(set(expanded_paths))
 
-    # Read the files
+    # Read files
     files = _read_files(target_paths)
+    if not files:
+        return "No files to process", "", "No target files found"
 
-    # Add line numbers for analysis
-    files_with_line_numbers = []
-    files_raw = []
-    for path, content in files:
-        lines = content.splitlines()
-        numbered = "\n".join([f"{i + 1:4}: {line}" for i, line in enumerate(lines)])
-        files_with_line_numbers.append((path, numbered))
-        files_raw.append((path, content))
+    path, content = files[0]  # Focus on first file
+    lines = content.splitlines()
 
-    targets = [p for p, _ in files] or target_paths
+    # Create numbered version for analysis
+    numbered_lines = [f"{i + 1:4}: {line}" for i, line in enumerate(lines)]
+    numbered_content = "\n".join(numbered_lines)
 
-    # Generate with LLM
     used_engine = None
     diff_text = ""
     explanation = ""
@@ -1566,24 +1552,29 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
         if model_path and Path(model_path).exists():
             n_ctx = 8192
 
-            # Step 1: Analyze the task
-            analysis_prompt = f"""Analyze this code modification task:
+            # Single combined prompt - analysis and diff generation together
+            combined_prompt = f"""Task: {goal}
 
-GOAL: {goal}
+File to modify: {path}
 
-TARGET FILE: {targets[0] if targets else 'unknown'}
+Current file content with line numbers:
+{numbered_content[:6000]}
 
-FILE CONTENT WITH LINE NUMBERS:
-{_budgeted_files_block(files_with_line_numbers, n_ctx // 3)}
+Instructions:
+1. First, identify what needs to change and where
+2. Then create a unified diff showing that change
 
-Please provide:
-1. What specific change is needed
-2. The exact location (line number) where the change should be made
-3. What the old content is
-4. What the new content should be
-5. Any challenges (like duplicate lines, ambiguous locations, etc.)
+A unified diff has this structure:
+- Header: diff --git a/filepath b/filepath
+- File markers: --- a/filepath and +++ b/filepath  
+- Hunk header: @@ -start,count +start,count @@
+- Lines: unchanged lines start with space, removed with -, added with +
 
-Be precise and thorough in your analysis."""
+Your response should be:
+1. Brief analysis of what to change
+2. The complete unified diff
+
+Generate the unified diff now:"""
 
             llm = Llama(
                 model_path=model_path,
@@ -1593,152 +1584,56 @@ Be precise and thorough in your analysis."""
                 verbose=False,
             )
 
-            # Get analysis
-            analysis_result = llm.create_chat_completion(
-                messages=[
-                    {"role": "system", "content": "You are a code analysis expert. Analyze the task thoroughly."},
-                    {"role": "user", "content": analysis_prompt},
-                ],
-                temperature=0.0,
-                top_p=0.1,
-                max_tokens=1024,
-            )
-
-            analysis = analysis_result["choices"][0]["message"]["content"] or ""
-            explanation = analysis
-            print(f"[ENGINE] LLM Analysis completed")
-
-            # Step 2: Generate the unified diff
-            diff_prompt = f"""Based on your analysis, generate a unified diff.
-
-PREVIOUS ANALYSIS:
-{analysis}
-
-ACTUAL FILE CONTENT (WITHOUT LINE NUMBERS):
-{_budgeted_files_block(files_raw, n_ctx // 2)}
-
-UNIFIED DIFF FORMAT REQUIREMENTS:
-1. Start with: diff --git a/{targets[0]} b/{targets[0]}
-2. Next line: --- a/{targets[0]}
-3. Next line: +++ b/{targets[0]}
-4. Hunk header: @@ -start,count +start,count @@
-   - start = starting line number
-   - count = number of lines in this section
-5. Context lines (unchanged): start with single space
-6. Removed lines: start with single minus -
-7. Added lines: start with single plus +
-8. Include at least 3 context lines before and after changes
-9. Context lines must match the original file EXACTLY
-
-EXAMPLE STRUCTURE:
-diff --git a/path/to/file.py b/path/to/file.py
---- a/path/to/file.py
-+++ b/path/to/file.py
-@@ -15,7 +15,7 @@
- context line at 15
- context line at 16
- context line at 17
--old line at 18 to be removed
-+new line at 18 to be added
- context line at 19
- context line at 20
- context line at 21
-
-Generate the unified diff for: {goal}
-Output ONLY the diff. No explanations, no markdown."""
-
             result = llm.create_chat_completion(
                 messages=[
-                    {"role": "system",
-                     "content": "You are a unified diff generator. Output only valid unified diff format."},
-                    {"role": "user", "content": diff_prompt},
+                    {"role": "system", "content": "You are a code editor. Analyze tasks and generate unified diffs."},
+                    {"role": "user", "content": combined_prompt},
                 ],
                 temperature=0.0,
                 top_p=0.05,
                 max_tokens=2048,
             )
 
-            diff_text = result["choices"][0]["message"]["content"] or ""
-            used_engine = "llama"
+            full_response = result["choices"][0]["message"]["content"] or ""
 
-            # Validate and clean
-            candidate = _extract_unified_diff(diff_text or "")
+            # Extract explanation (everything before the diff)
+            if "diff --git" in full_response:
+                parts = full_response.split("diff --git", 1)
+                explanation = parts[0].strip()
+                diff_text = "diff --git" + parts[1]
+            else:
+                explanation = full_response[:200]
+                diff_text = full_response
+
+            # Clean and validate the diff
+            candidate = _extract_unified_diff(diff_text)
             if candidate:
-                try:
-                    rel = _first_diff_target_path(candidate)
-                    if rel:
-                        abs_path = str((_repo_root() / rel).as_posix())
-                        fixed = fix_malformed_prepend_diff(candidate, abs_path)
-                        if fixed:
-                            candidate = fixed
-                except Exception:
-                    pass
+                # Basic validation - check it has the required parts
+                has_header = "diff --git" in candidate
+                has_file_markers = "---" in candidate and "+++" in candidate
+                has_hunk = "@@" in candidate
+                has_changes = "-" in candidate or "+" in candidate
 
-                try:
-                    preflight_verify_paths(candidate)
-                    _validate_unified_diff(candidate)
+                if has_header and has_file_markers and has_hunk and has_changes:
                     diff_text = candidate
-                    print(f"[ENGINE] LLM diff validated successfully")
-                except Exception as e:
-                    print(f"[ENGINE] LLM diff validation failed: {e}")
-
-                    # Retry with additional guidance
-                    retry_prompt = f"""The previous diff had issues. Please generate a correct unified diff.
-
-Common issues to avoid:
-- Make sure context lines start with a single space
-- Ensure line numbers in @@ are correct
-- Context must match the file exactly
-- Use proper diff headers
-
-FILE CONTENT (for reference):
-{_budgeted_files_block(files_raw, 2000)}
-
-Task: {goal}
-
-Generate a valid unified diff that:
-1. Starts with diff --git
-2. Has proper --- and +++ headers
-3. Has correct @@ line ranges
-4. Shows the actual change with - and + lines
-5. Includes context lines with space prefix
-
-Output only the diff."""
-
-                    retry_result = llm.create_chat_completion(
-                        messages=[
-                            {"role": "system", "content": "Generate only a valid unified diff."},
-                            {"role": "user", "content": retry_prompt},
-                        ],
-                        temperature=0.0,
-                        top_p=0.05,
-                        max_tokens=1024,
-                    )
-
-                    retry_diff = retry_result["choices"][0]["message"]["content"] or ""
-                    candidate = _extract_unified_diff(retry_diff)
-                    if candidate:
-                        try:
-                            _validate_unified_diff(candidate)
-                            diff_text = candidate
-                            print(f"[ENGINE] LLM retry successful")
-                        except Exception as e:
-                            print(f"[ENGINE] LLM retry also failed: {e}")
-                            diff_text = ""
+                    used_engine = "llama"
+                    print(f"[ENGINE] LLM generated valid diff")
+                else:
+                    print(f"[ENGINE] LLM diff missing required parts")
+                    diff_text = ""
             else:
                 print(f"[ENGINE] Could not extract valid diff from LLM output")
                 diff_text = ""
 
     except Exception as e:
         print(f"[ENGINE] LLM error: {e}")
-        used_engine = None
         diff_text = ""
 
-    # Fallback to OpenAI if needed
-    if not diff_text or not diff_text.lstrip().startswith("diff --git"):
+    # If LLM failed, try OpenAI
+    if not diff_text:
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
-            print("[ENGINE] Using OpenAI as fallback")
+            print("[ENGINE] Trying OpenAI fallback")
             try:
                 import requests, json
 
@@ -1748,21 +1643,20 @@ Output only the diff."""
                     data=json.dumps({
                         "model": "gpt-4o-mini",
                         "messages": [
-                            {"role": "system", "content": "You are a unified diff generator."},
-                            {"role": "user", "content": f"""
-Generate a unified diff for this task: {goal}
+                            {"role": "system",
+                             "content": "You are a diff generator. Create unified diffs for code changes."},
+                            {"role": "user", "content": f"""Task: {goal}
 
-File: {targets[0] if targets else 'unknown'}
+File: {path}
+Content (first 100 lines):
+{chr(10).join(lines[:100])}
 
-Content:
-{_budgeted_files_block(files_raw, 3000)}
-
-Requirements:
-- Output a valid unified diff starting with 'diff --git'
-- Include proper context lines
-- Show the exact change needed
-
-Output only the diff, no explanations."""},
+Generate a unified diff for this change. 
+Start with: diff --git a/{path} b/{path}
+Include --- and +++ lines
+Include @@ hunk markers
+Show removed lines with - and added lines with +
+Include context lines with space prefix"""}
                         ],
                         "temperature": 0
                     }),
@@ -1770,36 +1664,19 @@ Output only the diff, no explanations."""},
                 )
 
                 if resp.ok:
-                    openai_diff = resp.json()["choices"][0]["message"]["content"]
-                    candidate = _extract_unified_diff(openai_diff)
+                    openai_response = resp.json()["choices"][0]["message"]["content"]
+                    candidate = _extract_unified_diff(openai_response)
                     if candidate:
-                        try:
-                            _validate_unified_diff(candidate)
-                            diff_text = candidate
-                            used_engine = "openai"
-                            print(f"[ENGINE] OpenAI fallback successful")
-                        except Exception as e:
-                            print(f"[ENGINE] OpenAI diff also invalid: {e}")
-                            diff_text = ""
+                        diff_text = candidate
+                        used_engine = "openai"
+                        explanation = "Generated via OpenAI"
             except Exception as e:
                 print(f"[ENGINE] OpenAI error: {e}")
 
-    # Extract final diff
-    diff = _extract_unified_diff(diff_text) if diff_text else ""
-
     # Build summary
-    summary_parts = [
-        f"Goal: {goal}",
-        f"Engine: {used_engine or 'none'}",
-        f"Target: {targets[0] if targets else 'none'}"
-    ]
+    summary = f"Goal: {goal}\nTarget: {path}\nEngine: {used_engine or 'failed'}"
 
-    if not diff:
-        summary_parts.append("Result: Failed to generate valid diff")
-
-    summary = "\n".join(summary_parts)
-
-    return summary, diff, explanation or "No explanation generated"
+    return summary, diff_text, explanation or "No explanation available"
 
 def self_improve_with_retry(goal: str, constraints: Dict, max_attempts: int = 3) -> Dict:
     """

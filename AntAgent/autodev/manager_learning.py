@@ -1546,7 +1546,21 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 }
                 results.append(outcome)
                 continue
-
+            from .manager import _debug_collector  # filled by propose_patch_with_explanation
+            learning_ctx = LearningContext(
+                timestamp=time.time(),
+                goal=objective,
+                file_path=target_paths[0] if target_paths else "",
+                success=False,
+                diff_size=len(diff or ""),
+                diff_content=diff or "",
+                context_lines_used=constraints["require_context_lines"],
+                anchors_used=constraints.get("must_anchor_any", [])[:10],
+                retry_count=i - 1,
+                llm_confidence=0.0,
+                llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                engine_used=_debug_collector.get("engine_used", "unknown"),
+            )
             # Extract the three parts: summary, diff, explanation
             summary: str = ""
             explanation: str = ""
@@ -1583,21 +1597,7 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 results.append(outcome)
                 continue
 
-            from .manager import _debug_collector  # filled by propose_patch_with_explanation
-            learning_ctx = LearningContext(
-                timestamp=time.time(),
-                goal=objective,
-                file_path=target_paths[0] if target_paths else "",
-                success=False,
-                diff_size=len(diff or ""),
-                diff_content=diff or "",
-                context_lines_used=constraints["require_context_lines"],
-                anchors_used=constraints.get("must_anchor_any", [])[:10],
-                retry_count=i - 1,
-                llm_confidence=0.0,
-                llm_explanation=_debug_collector.get("llm_explanation", "none"),
-                engine_used=_debug_collector.get("engine_used", "unknown"),
-            )
+
             # Update learning context with diff info
             learning_ctx.diff_size = len(diff)
             if explanation:

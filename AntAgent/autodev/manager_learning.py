@@ -764,26 +764,33 @@ def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attemp
             enhanced_constraints["require_context_lines"] = min(
                 10, enhanced_constraints["require_context_lines"] + 2
             )
-            print(
-                f"[LEARNING] Retry {attempt_num}: Increased context to {enhanced_constraints['require_context_lines']}")
-
-        # Create learning context
-        learning_ctx = LearningContext(
-            timestamp=time.time(),
-            goal=goal,
-            file_path=enhanced_constraints.get("paths", [""])[0],
-            success=False,
-            diff_size=0,
-            context_lines_used=enhanced_constraints["require_context_lines"],
-            anchors_used=enhanced_constraints.get("must_anchor_any", []),
-            retry_count=attempt_num
-        )
+            print(f"[LEARNING] Retry {attempt_num}: Increased context to {enhanced_constraints['require_context_lines']}")
 
         try:
             # Call the actual improvement function
-            from .manager import propose_patch_with_explanation, apply_patch
+            from .manager import propose_patch_with_explanation, apply_patch, _debug_collector  # >>> import collector
 
             summary, diff, explanation = propose_patch_with_explanation(goal, enhanced_constraints)
+
+            # >>> Fill/ensure debug metadata now that we *know* the outcome
+            _debug_collector["engine_used"] = _debug_collector.get("engine_used") or "unknown"
+            _debug_collector["llm_explanation"] = explanation or _debug_collector.get("llm_explanation") or "none"
+
+            # >>> Create the LearningContext *after* the model has run so we capture engine/explanation
+            learning_ctx = LearningContext(
+                timestamp=time.time(),
+                goal=goal,
+                file_path=enhanced_constraints.get("paths", [""])[0],
+                success=False,
+                diff_size=len(diff or ""),
+                diff_content=diff or "",
+                context_lines_used=enhanced_constraints["require_context_lines"],
+                anchors_used=enhanced_constraints.get("must_anchor_any", []),
+                retry_count=attempt_num,
+                # Pull these from the collector that propose_patch_with_explanation sets
+                llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                engine_used=_debug_collector.get("engine_used", "unknown"),
+            )
 
             if not diff:
                 learning_ctx.error_type = "no_diff_generated"
@@ -796,8 +803,6 @@ def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attemp
                     "explanation": explanation
                 })
                 continue
-
-            learning_ctx.diff_size = len(diff)
 
             # Try to apply
             result = apply_patch(diff)
@@ -833,8 +838,23 @@ def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attemp
                 })
 
         except Exception as e:
-            learning_ctx.error_type = "exception"
-            learning_ctx.error_detail = str(e)
+            # >>> Build a context even on exceptions, using whatever is in the collector
+            from .manager import _debug_collector  # safe re-import
+            learning_ctx = LearningContext(
+                timestamp=time.time(),
+                goal=goal,
+                file_path=enhanced_constraints.get("paths", [""])[0],
+                success=False,
+                diff_size=0,
+                diff_content="",
+                context_lines_used=enhanced_constraints["require_context_lines"],
+                anchors_used=enhanced_constraints.get("must_anchor_any", []),
+                retry_count=attempt_num,
+                llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                engine_used=_debug_collector.get("engine_used", "unknown"),
+                error_type="exception",
+                error_detail=str(e),
+            )
             learning.learn_from_attempt(learning_ctx)
 
             attempts.append({

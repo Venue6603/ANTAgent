@@ -71,9 +71,10 @@ def _reset_debug_collector():
         "debug_messages": [],
         "validation_errors": [],
         "performance_timings": {},
-        "engine_used": "",
-        "llm_explanation": ""
+        "engine_used": "unknown",
+        "llm_explanation": "not provided"
     }
+
 
 def _validate_unified_diff(diff_text: str) -> None:
     """

@@ -183,19 +183,52 @@ def _diff_touches_any_literal_in_real_file(diff_text: str, literals: list[str]) 
 
 @dataclass
 class LearningContext:
-    """Stores context about successful and failed attempts"""
+    """Enhanced context for learning from attempts with detailed debugging information"""
+    # Basic info
     timestamp: float
     goal: str
     file_path: str
     success: bool
+    
+    # Diff information
     diff_size: int
+    diff_content: str = ""  # Store the actual diff for analysis
+    
+    # Context and anchoring
     context_lines_used: int
     anchors_used: List[str]
-    error_type: Optional[str] = None
-    error_detail: Optional[str] = None
-    patterns_found: List[str] = field(default_factory=list)
+    
+    # LLM information
+    llm_explanation: str = ""  # The explanation the LLM provided
+    engine_used: str = ""  # "llama", "openai", "deepseek", etc.
     llm_confidence: float = 0.0
     retry_count: int = 0
+    
+    # Error tracking
+    error_type: Optional[str] = None
+    error_detail: Optional[str] = None
+    debug_errors: List[str] = field(default_factory=list)  # All debug messages
+    validation_errors: List[str] = field(default_factory=list)  # Specific validation failures
+    
+    # Performance metrics
+    generation_time_ms: float = 0.0
+    validation_time_ms: float = 0.0
+    apply_time_ms: float = 0.0
+    total_time_ms: float = 0.0
+    
+    # Pattern recognition
+    patterns_found: List[str] = field(default_factory=list)
+    pattern_type: str = ""
+    
+    # File context
+    file_size_bytes: int = 0
+    file_line_count: int = 0
+    target_line_number: int = 0
+    
+    # Learning metadata
+    learning_strategy: str = ""  # "conservative", "standard", "confident"
+    predicted_difficulty: float = 0.0
+    similar_successes_used: int = 0
 
 
 @dataclass
@@ -415,14 +448,40 @@ class EnhancedLearningSystem:
         return similar[:limit]
 
     def learn_from_attempt(self, context: LearningContext):
-        """Learn from a single attempt"""
+        """Learn from a single attempt with enhanced debugging information"""
         self.lessons["total_attempts"] += 1
+
+        # Store detailed attempt information
+        attempt_data = {
+            "timestamp": context.timestamp,
+            "goal": context.goal,
+            "file_path": context.file_path,
+            "success": context.success,
+            "engine_used": context.engine_used,
+            "llm_explanation": context.llm_explanation,
+            "error_type": context.error_type,
+            "error_detail": context.error_detail,
+            "debug_errors": context.debug_errors,
+            "validation_errors": context.validation_errors,
+            "performance": {
+                "generation_time_ms": context.generation_time_ms,
+                "validation_time_ms": context.validation_time_ms,
+                "apply_time_ms": context.apply_time_ms,
+                "total_time_ms": context.total_time_ms
+            },
+            "context": {
+                "lines_used": context.context_lines_used,
+                "anchors_used": context.anchors_used,
+                "strategy": context.learning_strategy,
+                "predicted_difficulty": context.predicted_difficulty
+            }
+        }
 
         if context.success:
             self.lessons["successful_changes"] += 1
             self.success_db.append(context)
 
-            # Update pattern memory
+            # Update pattern memory with enhanced data
             pattern_type = self.classify_goal(context.goal)
             if pattern_type not in self.patterns:
                 self.patterns[pattern_type] = PatternMemory(
@@ -446,24 +505,60 @@ class EnhancedLearningSystem:
             pattern.file_patterns[context.file_path] += 1
             pattern.last_updated = time.time()
 
-            # Update anchor effectiveness
+            # Update anchor effectiveness with engine-specific data
             for anchor in context.anchors_used:
                 current = self.lessons["anchor_effectiveness"].get(anchor, 0.0)
-                self.lessons["anchor_effectiveness"][anchor] = current * 0.9 + 0.1
+                # Boost effectiveness if this anchor worked with the current engine
+                boost = 0.1 if context.engine_used == "llama" else 0.05
+                self.lessons["anchor_effectiveness"][anchor] = current * 0.9 + boost
+
+            # Learn from successful patterns
+            if context.llm_explanation:
+                # Extract key phrases from successful explanations
+                explanation_words = context.llm_explanation.lower().split()
+                key_phrases = [w for w in explanation_words if len(w) > 4 and w.isalpha()]
+                self.lessons.setdefault("successful_explanations", []).extend(key_phrases[:5])
 
         else:
             self.failure_db.append(context)
             self.lessons["failure_reasons"][context.error_type or "unknown"] += 1
 
-            # Update file difficulty
-            current = self.lessons["file_difficulty"].get(context.file_path, 0.5)
-            self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.1)
+            # Enhanced failure learning
+            if context.debug_errors:
+                self.lessons.setdefault("debug_error_patterns", []).extend(context.debug_errors[:3])
+            
+            if context.validation_errors:
+                self.lessons.setdefault("validation_error_patterns", []).extend(context.validation_errors[:3])
 
-            # Learn from failure patterns
+            # Update file difficulty based on specific error types
+            current = self.lessons["file_difficulty"].get(context.file_path, 0.5)
+            if context.error_type == "validation_error":
+                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.15)
+            elif context.error_type == "apply_failed":
+                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.1)
+            else:
+                self.lessons["file_difficulty"][context.file_path] = min(1.0, current + 0.05)
+
+            # Learn from failure patterns with engine-specific data
             if context.error_type == "no_context":
                 self.lessons["optimal_settings"]["context_lines"] = min(
                     10, self.lessons["optimal_settings"]["context_lines"] + 1
                 )
+            
+            # Track engine-specific failure patterns
+            engine_key = f"{context.engine_used}_failures"
+            self.lessons.setdefault(engine_key, []).append({
+                "error_type": context.error_type,
+                "error_detail": context.error_detail,
+                "timestamp": context.timestamp
+            })
+
+        # Store detailed attempt for analysis
+        self.lessons.setdefault("detailed_attempts", []).append(attempt_data)
+        
+        # Keep only last 100 detailed attempts to prevent memory bloat
+        if len(self.lessons["detailed_attempts"]) > 100:
+            self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
 
         self.save_all()
 
@@ -511,8 +606,8 @@ class EnhancedLearningSystem:
 
         return enhanced
 
-    def generate_learning_report(self) -> str:
-        """Generate a human-readable learning report"""
+    def generate_enhanced_learning_report(self) -> str:
+        """Generate a comprehensive learning report with debugging insights"""
         total = self.lessons["total_attempts"]
         if total == 0:
             return "No learning data yet."
@@ -520,17 +615,57 @@ class EnhancedLearningSystem:
         success_rate = self.lessons["successful_changes"] / total * 100
 
         report = f"""
-Learning Report (Total Attempts: {total})
-==========================================
+Enhanced Learning Report (Total Attempts: {total})
+==================================================
 
 Success Rate: {success_rate:.1f}%
 Successful Changes: {self.lessons["successful_changes"]}
 
-Top Failure Reasons:
+Engine Performance:
 """
+        
+        # Analyze engine-specific performance
+        engine_stats = {}
+        for attempt in self.lessons.get("detailed_attempts", []):
+            engine = attempt.get("engine_used", "unknown")
+            if engine not in engine_stats:
+                engine_stats[engine] = {"total": 0, "success": 0, "avg_time": 0}
+            engine_stats[engine]["total"] += 1
+            if attempt.get("success"):
+                engine_stats[engine]["success"] += 1
+            if attempt.get("performance", {}).get("total_time_ms"):
+                engine_stats[engine]["avg_time"] += attempt["performance"]["total_time_ms"]
+        
+        for engine, stats in engine_stats.items():
+            if stats["total"] > 0:
+                success_pct = stats["success"] / stats["total"] * 100
+                avg_time = stats["avg_time"] / stats["total"] if stats["total"] > 0 else 0
+                report += f"  - {engine}: {success_pct:.1f}% success ({stats['success']}/{stats['total']}), avg {avg_time:.0f}ms\n"
+
+        report += "\nTop Failure Reasons:\n"
         for reason, count in sorted(self.lessons["failure_reasons"].items(),
                                     key=lambda x: x[1], reverse=True)[:5]:
             report += f"  - {reason}: {count} times\n"
+
+        report += "\nDebug Error Patterns:\n"
+        debug_patterns = self.lessons.get("debug_error_patterns", [])
+        if debug_patterns:
+            from collections import Counter
+            pattern_counts = Counter(debug_patterns)
+            for pattern, count in pattern_counts.most_common(3):
+                report += f"  - '{pattern[:50]}...': {count} occurrences\n"
+        else:
+            report += "  - No debug error patterns recorded\n"
+
+        report += "\nValidation Error Patterns:\n"
+        validation_patterns = self.lessons.get("validation_error_patterns", [])
+        if validation_patterns:
+            from collections import Counter
+            pattern_counts = Counter(validation_patterns)
+            for pattern, count in pattern_counts.most_common(3):
+                report += f"  - '{pattern[:50]}...': {count} occurrences\n"
+        else:
+            report += "  - No validation error patterns recorded\n"
 
         report += "\nMost Effective Anchors:\n"
         for anchor, effectiveness in sorted(self.lessons["anchor_effectiveness"].items(),
@@ -546,6 +681,26 @@ Top Failure Reasons:
                                        key=lambda x: x[1], reverse=True)[:5]:
             report += f"  - {file}: difficulty {difficulty:.2f}\n"
 
+        # Performance insights
+        report += "\nPerformance Insights:\n"
+        recent_attempts = self.lessons.get("detailed_attempts", [])[-10:]
+        if recent_attempts:
+            avg_generation = sum(a.get("performance", {}).get("generation_time_ms", 0) for a in recent_attempts) / len(recent_attempts)
+            avg_validation = sum(a.get("performance", {}).get("validation_time_ms", 0) for a in recent_attempts) / len(recent_attempts)
+            avg_apply = sum(a.get("performance", {}).get("apply_time_ms", 0) for a in recent_attempts) / len(recent_attempts)
+            report += f"  - Avg generation time: {avg_generation:.0f}ms\n"
+            report += f"  - Avg validation time: {avg_validation:.0f}ms\n"
+            report += f"  - Avg apply time: {avg_apply:.0f}ms\n"
+
+        # Learning recommendations
+        report += "\nLearning Recommendations:\n"
+        if success_rate < 50:
+            report += "  - Consider increasing context lines for better anchoring\n"
+        if self.lessons.get("validation_error_patterns"):
+            report += "  - Focus on improving diff validation accuracy\n"
+        if len(self.lessons.get("anchor_effectiveness", {})) < 5:
+            report += "  - Build more anchor phrases for better targeting\n"
+
         return report
 
 
@@ -559,6 +714,38 @@ def get_learning_system() -> EnhancedLearningSystem:
     if _learning_system is None:
         _learning_system = EnhancedLearningSystem()
     return _learning_system
+
+
+def demonstrate_enhanced_learning():
+    """Demonstrate the enhanced learning capabilities"""
+    learning = get_learning_system()
+    
+    print("=== Enhanced Learning System Demo ===")
+    print(f"Total attempts recorded: {learning.lessons['total_attempts']}")
+    print(f"Successful changes: {learning.lessons['successful_changes']}")
+    
+    if learning.lessons['total_attempts'] > 0:
+        print("\n=== Enhanced Learning Report ===")
+        print(learning.generate_enhanced_learning_report())
+        
+        print("\n=== Recent Detailed Attempts ===")
+        recent = learning.lessons.get("detailed_attempts", [])[-3:]
+        for i, attempt in enumerate(recent, 1):
+            print(f"\nAttempt {i}:")
+            print(f"  Goal: {attempt['goal'][:50]}...")
+            print(f"  Engine: {attempt['engine_used']}")
+            print(f"  Success: {attempt['success']}")
+            if attempt.get('llm_explanation'):
+                print(f"  Explanation: {attempt['llm_explanation'][:100]}...")
+            if attempt.get('debug_errors'):
+                print(f"  Debug errors: {len(attempt['debug_errors'])} messages")
+            if attempt.get('performance'):
+                perf = attempt['performance']
+                print(f"  Performance: {perf.get('total_time_ms', 0):.0f}ms total")
+    else:
+        print("No learning data available yet. Run some self-improvement attempts to see enhanced learning in action!")
+    
+    return learning
 
 
 def enhanced_self_improve_with_learning(goal: str, constraints: Dict, max_attempts: int = 3) -> Dict:

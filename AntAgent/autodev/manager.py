@@ -45,6 +45,36 @@ _LAST_SELF_IMPROVE_DIAG: dict | None = None
 # Tracks which remote provider was used when llama is unavailable
 _LAST_FALLBACK_ENGINE: str | None = None
 
+# Global debug collector for learning
+_debug_collector = {
+    "debug_messages": [],
+    "validation_errors": [],
+    "performance_timings": {},
+    "engine_used": "",
+    "llm_explanation": ""
+}
+
+def _collect_debug_info(message: str, category: str = "debug"):
+    """Collect debug information for learning"""
+    global _debug_collector
+    if category == "debug":
+        _debug_collector["debug_messages"].append(message)
+    elif category == "validation":
+        _debug_collector["validation_errors"].append(message)
+    elif category == "timing":
+        _debug_collector["performance_timings"].update(message)
+
+def _reset_debug_collector():
+    """Reset debug collector for new attempt"""
+    global _debug_collector
+    _debug_collector = {
+        "debug_messages": [],
+        "validation_errors": [],
+        "performance_timings": {},
+        "engine_used": "",
+        "llm_explanation": ""
+    }
+
 def _validate_unified_diff(diff_text: str) -> None:
     """
     Strict unified diff validator.
@@ -1104,21 +1134,62 @@ def apply_patch(diff_text: str):
     # fail cleanly
     return {"applied": False, "message": msg + " | " + lmsg}
 
-def list_paths() -> list:
-    """
-    Returns the list of all tracked .py files under AntAgent/.
-    SMOKE: v6 docstring patch
-    Llama test successful. (SI v7)
-    Used by /code/list_paths route.
-    """
-    import os
-    root = os.path.join(os.path.dirname(__file__), "..")
-    found = []
-    for dirpath, _, filenames in os.walk(root):
-        for f in filenames:
-            if f.endswith(".py"):
-                found.append(os.path.relpath(os.path.join(dirpath, f), root))
-    return found
+def create_enhanced_learning_context(goal: str, file_path: str, success: bool, 
+                                   diff_content: str = "", error_type: str = None, 
+                                   error_detail: str = None) -> 'LearningContext':
+    """Create an enhanced learning context with all debugging information"""
+    from .manager_learning import LearningContext
+    import time
+    from pathlib import Path
+    
+    # Get file statistics
+    file_size = 0
+    file_lines = 0
+    if file_path and Path(file_path).exists():
+        try:
+            content = Path(file_path).read_text(encoding="utf-8", errors="replace")
+            file_size = len(content.encode("utf-8"))
+            file_lines = len(content.splitlines())
+        except Exception:
+            pass
+    
+    # Extract target line number from goal if possible
+    target_line = 0
+    import re
+    line_match = re.search(r'line\s+(\d+)', goal.lower())
+    if line_match:
+        target_line = int(line_match.group(1))
+    
+    return LearningContext(
+        timestamp=time.time(),
+        goal=goal,
+        file_path=file_path,
+        success=success,
+        diff_size=len(diff_content),
+        diff_content=diff_content,
+        context_lines_used=3,  # Default, will be updated by caller
+        anchors_used=[],  # Will be updated by caller
+        llm_explanation=_debug_collector.get("llm_explanation", ""),
+        engine_used=_debug_collector.get("engine_used", ""),
+        llm_confidence=0.7 if success else 0.3,
+        retry_count=0,  # Will be updated by caller
+        error_type=error_type,
+        error_detail=error_detail,
+        debug_errors=_debug_collector.get("debug_messages", []),
+        validation_errors=_debug_collector.get("validation_errors", []),
+        generation_time_ms=_debug_collector.get("performance_timings", {}).get("generation", 0),
+        validation_time_ms=_debug_collector.get("performance_timings", {}).get("validation", 0),
+        apply_time_ms=_debug_collector.get("performance_timings", {}).get("apply", 0),
+        total_time_ms=_debug_collector.get("performance_timings", {}).get("total", 0),
+        patterns_found=[],  # Will be populated by learning system
+        pattern_type="",  # Will be populated by learning system
+        file_size_bytes=file_size,
+        file_line_count=file_lines,
+        target_line_number=target_line,
+        learning_strategy="standard",  # Will be updated by caller
+        predicted_difficulty=0.5,  # Will be updated by caller
+        similar_successes_used=0  # Will be updated by caller
+    )
 
 
 def read_files(paths: list) -> dict:
@@ -1619,10 +1690,14 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             if ok1:
                 diff_text = candidate
                 used_engine = "ollama"
+                _debug_collector["engine_used"] = "ollama"
+                _debug_collector["llm_explanation"] = explanation
                 print("[ENGINE] LLM generated valid diff (first try)")
             else:
                 print(f"[ENGINE] LLM diff validation failed: {why1}")
                 print(f"[DEBUG] Validating diff (first 500 chars):\n{candidate[:500]}")
+                _collect_debug_info(f"LLM diff validation failed: {why1}", "validation")
+                _collect_debug_info(f"Failed diff content: {candidate[:200]}", "debug")
                 # Critique & retry with the exact validator error
                 critic = (
                     "Your previous diff was rejected for the reason below.\n"
@@ -1726,6 +1801,8 @@ Removed lines start with '-' and added lines with '+'. Do not include analysis o
                         if okb:
                             diff_text = cand
                             used_engine = "openai"
+                            _debug_collector["engine_used"] = "openai"
+                            _debug_collector["llm_explanation"] = "Generated via OpenAI"
                             explanation = "Generated via OpenAI"
                             print("[ENGINE] OpenAI generated valid diff")
                         else:

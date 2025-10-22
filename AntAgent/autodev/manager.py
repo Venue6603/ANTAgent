@@ -1160,7 +1160,7 @@ def create_enhanced_learning_context(goal: str, file_path: str, success: bool,
     line_match = re.search(r'line\s+(\d+)', goal.lower())
     if line_match:
         target_line = int(line_match.group(1))
-    
+
     return LearningContext(
         timestamp=time.time(),
         goal=goal,
@@ -1826,6 +1826,10 @@ Removed lines start with '-' and added lines with '+'. Do not include analysis o
     summary = f"Goal: {goal}\nTarget: {path}\nEngine: {used_engine or 'failed'}"
     if not diff_text and not explanation:
         explanation = "No explanation available"
+
+    global _debug_collector
+    _debug_collector["engine_used"] = used_engine or "unknown"
+    _debug_collector["llm_explanation"] = explanation or "none"
 
     return summary, diff_text, explanation
 

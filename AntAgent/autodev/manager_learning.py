@@ -711,10 +711,12 @@ def _diff_targets(udiff_text: str) -> list[str]:
     return out
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[1]  # .../ANTAgent
+    # This file is at .../AntAgent/autodev/manager_learning.py
+    # So parents[1] gives us .../AntAgent
+    return Path(__file__).resolve().parents[1]
 
 def _allowlist_path() -> Path:
-    return _project_root() / "AntAgent" / "autodev" / "allowlist.txt"
+    return _project_root() / "autodev" / "allowlist.txt"
 
 def _allowed_paths() -> list[str]:
     p = _allowlist_path()

@@ -1533,11 +1533,10 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     import os, re, json
     from pathlib import Path
 
-    # Validator to block top-inserts / import-inline comment mistakes and require context
+    # Validator (if unavailable, accept anything—keeps old behavior)
     try:
         from AntAgent.autodev.diff_doctor import vet_diff
     except Exception:
-        # Soft fallback: accept anything if validator unavailable
         def vet_diff(x: str, min_context: int = 1):
             return True, ""
 
@@ -1546,7 +1545,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     # ------------------------------
     target_paths = constraints.get("paths") or []
 
-    # Path expansion (retain your original behavior)
+    # Path expansion (retain your behavior)
     all_allowed = _allowed_paths()
     expanded_paths = []
     for path in target_paths:
@@ -1572,17 +1571,78 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     if not files:
         return "No files to process", "", "No target files found"
 
-    # Focus on first file (retain your behavior)
+    # Focus on first file
     path, content = files[0]
-
-    # Create numbered version for analysis (retain)
     lines = content.splitlines()
+
+    # Numbered version for analysis (retain)
     numbered_lines = [f"{i + 1:4}: {line}" for i, line in enumerate(lines)]
     numbered_content = "\n".join(numbered_lines)
+
+    # Compute precise context around the target line if present
+    target_line_idx = None
+    m = re.search(r'^(?P<lead>\s*)#\s*Random\s+animal:\s*(?P<animal>\w+)\s*$', content, flags=re.M)
+    if m:
+        # 0-based index
+        target_line_idx = content[:m.start()].count("\n")
+    # Extract context lines for anchoring (even if target not found, we still compute safely)
+    def _get(ctx_idx: int) -> str:
+        if ctx_idx is None:
+            return ""
+        if 0 <= ctx_idx < len(lines):
+            return lines[ctx_idx]
+        return ""
+    prev_line = _get((target_line_idx - 1) if target_line_idx is not None else None)
+    curr_line = _get(target_line_idx if target_line_idx is not None else None)
+    next_line = _get((target_line_idx + 1) if target_line_idx is not None else None)
 
     used_engine = None
     diff_text = ""
     explanation = ""
+
+    # ------------------------------
+    # Helper: robust call into OllamaAdapter
+    # ------------------------------
+    def _ollama_complete(llm, system: str, prompt: str, temperature: float, max_tokens: int):
+        """
+        Try multiple method names so different adapters work:
+        - complete(system=..., prompt=...)
+        - chat(system=..., messages=[...])
+        - create_chat_completion(messages=[...])
+        Returns plain text content.
+        """
+        # 1) .complete(system=..., prompt=...)
+        if hasattr(llm, "complete"):
+            return llm.complete(system=system, prompt=prompt, temperature=temperature,
+                                max_tokens=max_tokens, stop=["```", "\x00"])
+        # 2) .chat(system=..., messages=[...])
+        if hasattr(llm, "chat"):
+            resp = llm.chat(
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stop=["```", "\x00"],
+            )
+            # Assume .chat returns a dict with "content" or a string
+            if isinstance(resp, dict) and "content" in resp:
+                return resp["content"]
+            return resp  # string fallback
+        # 3) .create_chat_completion(messages=[...])
+        if hasattr(llm, "create_chat_completion"):
+            result = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=temperature,
+                top_p=0.05,
+                max_tokens=max_tokens,
+            )
+            return (result.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")) or ""
+        raise AttributeError("OllamaAdapter has no supported chat/complete method")
 
     # ------------------------------
     # 1) Primary: Ollama (DeepSeek)
@@ -1590,7 +1650,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     try:
         from ollama_adapter import Llama
 
-        # Strong, diff-only system prompt + tiny few-shot to anchor format
+        # Strong diff-only system prompt anchored to THIS file path
         DIFF_SYSTEM_PROMPT = (
             "You are a code refactoring assistant. Your ONLY output must be a valid unified diff "
             "that can be applied with `git apply`.\n\n"
@@ -1601,46 +1661,26 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             "  index 0000000..0000000 100644\n"
             f"  --- a/{path}\n"
             f"  +++ b/{path}\n"
-            "- Provide enough unchanged context lines around edits so the patch anchors reliably.\n"
+            "- Include a proper @@ hunk header with line numbers.\n"
+            "- Provide at least one unchanged context line before and after the edited line.\n"
             "- Edit only what the objective requires.\n"
         )
 
-        DIFF_FEWSHOT = (
-            "Example (change a single comment token):\n"
-            f"diff --git a/{path} b/{path}\n"
-            "index 0000000..0000000 100644\n"
-            f"--- a/{path}\n"
-            f"+++ b/{path}\n"
-            "@@ -10,7 +10,7 @@ def f():\n"
-            "     x = 1\n"
-            "     y = 2\n"
-            "     z = x + y\n"
-            "-    # Random animal: Giraffe\n"
-            "+    # Random animal: Pangolin\n"
-            "     return z\n"
-        )
+        # If we know the exact line, force the model to anchor on it
+        anchor_block = ""
+        if curr_line:
+            anchor_block = (
+                "Use THIS exact three-line context in the hunk (space-prefixed in the diff):\n"
+                f"  {prev_line}\n"
+                f"  {curr_line}\n"
+                f"  {next_line}\n"
+                "Do not modify the prev/next lines; only change the middle line if required.\n"
+            )
 
-        CRITIC_RUBRIC = (
-            "Your previous diff was rejected for the reason shown below.\n"
-            "You MUST output a corrected unified diff that fixes ONLY that problem.\n"
-            "Rules reminder:\n"
-            "- No prose. No code fences. Diff only.\n"
-            f"- Header lines must match exactly this target file path: {path}\n"
-            "- Include sufficient context lines.\n"
-            "- Do not inline comments at import/from statements unless replacing the whole line with '-' and '+' pairs.\n"
-        )
-
-        # Initialize model via Ollama adapter
-        llm = Llama(
-            model=os.getenv("ANT_OLLAMA_MODEL", "deepseek-coder-v2:16b"),
-            host=os.getenv("ANT_OLLAMA_HOST", "http://localhost:11434"),
-            num_ctx=4096,
-        )
-
-        # Build the user content (include numbered content for stable anchoring)
         user_1 = (
             f"Objective:\n{goal.strip()}\n\n"
             f"Target file path (must match headers exactly):\n{path}\n\n"
+            f"{anchor_block}\n"
             "Current file content with line numbers (truncated for context):\n"
             "-----8<-----\n"
             f"{numbered_content[:6000]}\n"
@@ -1648,35 +1688,35 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             "Produce ONLY the unified diff.\n"
         )
 
-        # First attempt
-        raw1 = llm.complete(
-            system=DIFF_SYSTEM_PROMPT,
-            prompt=DIFF_FEWSHOT + "\n" + user_1,
-            temperature=0.1,
-            max_tokens=2048,
-            stop=["```", "\x00"],
+        # init model
+        llm = Llama(
+            model=os.getenv("ANT_OLLAMA_MODEL", "deepseek-coder-v2:16b"),
+            host=os.getenv("ANT_OLLAMA_HOST", "http://localhost:11434"),
+            num_ctx=4096,
         )
+
+        # First attempt
+        raw1 = _ollama_complete(llm, DIFF_SYSTEM_PROMPT, user_1, temperature=0.1, max_tokens=2048)
         full_response = (raw1 or "").strip()
 
-        # If the model included analysis, split it out (retain your behavior)
+        # Extract diff (keep your prior behavior)
         if "diff --git" in full_response:
             parts = full_response.split("diff --git", 1)
-            explanation = parts[0].strip()  # usually empty due to diff-only rule
+            explanation = parts[0].strip()
             candidate = "diff --git" + parts[1]
         else:
             explanation = full_response[:200]
             candidate = full_response
 
-        # Normalize candidate using your helper (retain)
         candidate = _extract_unified_diff(candidate) or ""
 
-        # Validate with structural checks (retain) + semantic validator
+        # Structural + semantic validation
         def _basic_diff_ok(d: str) -> bool:
             return (
                 d.startswith(f"diff --git a/{path} b/{path}") and
                 ("--- a/" in d and "+++ b/" in d) and
                 "@@" in d and
-                any(ch in d for ch in ("+\n", "-\n", "\n+ ", "\n- "))
+                any(ch in d for ch in ("\n+ ", "\n- ", "+\n", "-\n"))
             )
 
         if candidate and _basic_diff_ok(candidate):
@@ -1686,22 +1726,17 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                 used_engine = "ollama"
                 print("[ENGINE] LLM generated valid diff (first try)")
             else:
-                # Critique & retry once with validator error
-                critic_prompt = (
-                    CRITIC_RUBRIC
-                    + "\n\nREJECTION REASON:\n"
-                    + str(why1)
-                    + "\n\nYour previous (invalid) diff:\n"
-                    + candidate
-                    + "\n\nRe-output a corrected diff now (diff only):"
+                # Critique & retry with the exact validator error
+                critic = (
+                    "Your previous diff was rejected for the reason below.\n"
+                    "You MUST output a corrected unified diff for the SAME file.\n"
+                    "Rules: diff only; proper header for this path; include @@ hunk; include context above/below; "
+                    "do not inline comments into import/from lines unless replacing the whole line.\n\n"
+                    f"REJECTION REASON:\n{why1}\n\n"
+                    "Previous (invalid) diff:\n" + candidate + "\n\n"
+                    "Re-output a corrected diff now (diff only):"
                 )
-                raw2 = llm.complete(
-                    system=DIFF_SYSTEM_PROMPT,
-                    prompt=critic_prompt,
-                    temperature=0.05,
-                    max_tokens=2048,
-                    stop=["```", "\x00"],
-                )
+                raw2 = _ollama_complete(llm, DIFF_SYSTEM_PROMPT, critic, temperature=0.05, max_tokens=2048)
                 full2 = (raw2 or "").strip()
                 cand2 = _extract_unified_diff(full2) or ""
                 if cand2 and _basic_diff_ok(cand2):
@@ -1721,7 +1756,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
         print(f"[ENGINE] LLM error: {e}")
 
     # -----------------------------------
-    # 2) Fallback: OpenAI (retain intent)
+    # 2) Fallback: OpenAI (kept, improved)
     # -----------------------------------
     if not diff_text:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -1729,6 +1764,17 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
             print("[ENGINE] Trying OpenAI fallback")
             try:
                 import requests
+
+                # Build an anchor-aware prompt so the hunk matches exactly
+                anchor_prompt = ""
+                if curr_line:
+                    anchor_prompt = f"""
+Use THIS exact three-line context in the @@ hunk:
+  {prev_line}
+  {curr_line}
+  {next_line}
+Keep prev/next unchanged; only modify the middle line if required.
+""".strip()
 
                 resp = requests.post(
                     "https://api.openai.com/v1/chat/completions",
@@ -1741,15 +1787,21 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                             {"role": "user", "content": f"""Task: {goal}
 
 File: {path}
-Content (first 120 lines for context, include unchanged lines around edits):
-{chr(10).join(lines[:120])}
+
+{anchor_prompt}
+
+Current file content (first 160 lines for context):
+{chr(10).join(lines[:160])}
 
 Output ONLY the unified diff.
-Start with: diff --git a/{path} b/{path}
-Include --- and +++ lines
-Include @@ hunk markers
-Show removed lines with - and added lines with +
-Include a few context lines with space prefix"""}
+Start with exactly:
+diff --git a/{path} b/{path}
+Then:
+index 0000000..0000000 100644
+--- a/{path}
++++ b/{path}
+Include a proper @@ hunk with accurate line numbers and include at least one unchanged context line above and below the changed line.
+Removed lines start with '-' and added lines with '+'. Do not include analysis or code fences."""}
                         ],
                         "temperature": 0,
                         "max_tokens": 2048
@@ -1785,6 +1837,9 @@ Include a few context lines with space prefix"""}
         explanation = "No explanation available"
 
     return summary, diff_text, explanation
+
+
+
 
 def self_improve_with_retry(goal: str, constraints: Dict, max_attempts: int = 3) -> Dict:
     """

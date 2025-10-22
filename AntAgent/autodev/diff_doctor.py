@@ -99,137 +99,129 @@ def _reject_append_without_remove_random_animal(diff_text: str) -> tuple[bool, s
     if not ok:
         return ok, why
     return (True, "")
-
 from __future__ import annotations
 import re
 from typing import List, Tuple
 
-HUNK_RE = re.compile(r"^@@\s*-\d+(?:,\d+)?\s*\+\d+(?:,\d+)?\s*@@", re.M)
-IMPORT_RE = re.compile(r"^\s*(from\s+\S+\s+import\b|import\s+\S+)")
+_HUNK_RE = re.compile(r"^@@\s*-\d+(?:,\d+)?\s*\+\d+(?:,\d+)?\s*@@", re.M)
+_IMPORT_RE = re.compile(r"^\s*(from\s+\S+\s+import\b|import\s+\S+)")
 
-def has_top_insert(diff_text: str) -> bool:
+def _has_top_insert(diff_text: str) -> bool:
     """
-    Heuristic: reject diffs whose first hunk adds lines without any surrounding
-    context or deletions (common 'top insert' failure).
+    Heuristic: first hunk has only additions and zero context/deletions.
     """
     lines = diff_text.splitlines()
     in_hunk = False
-    saw_context = False
-    saw_minus = False
-    saw_plus = False
-
+    saw_plus = saw_minus = saw_ctx = False
     for ln in lines:
         if ln.startswith("@@"):
-            # reset for first hunk only; after we saw a proper mix, stop checking
+            # consider only first hunk
             if in_hunk:
                 break
             in_hunk = True
-            saw_context = False
-            saw_minus = False
-            saw_plus = False
             continue
         if not in_hunk:
             continue
-        if ln.startswith(" "):
-            saw_context = True
-        elif ln.startswith("-"):
-            saw_minus = True
-        elif ln.startswith("+"):
-            saw_plus = True
+        if ln.startswith("+"): saw_plus = True
+        elif ln.startswith("-"): saw_minus = True
+        elif ln.startswith(" "): saw_ctx = True
+    return in_hunk and saw_plus and not saw_minus and not saw_ctx
 
-    # "Top insert" signature: only additions in first hunk and no context/deletions
-    return in_hunk and saw_plus and not saw_context and not saw_minus
-
-
-def validate_min_context(diff_text: str, min_context: int = 1) -> Tuple[bool, str]:
-    """
-    Ensure each hunk has at least `min_context` lines that start with a space.
-    """
+def _validate_min_context(diff_text: str, min_context: int = 1) -> Tuple[bool, str]:
     if min_context <= 0:
         return True, ""
-
     lines = diff_text.splitlines()
     in_hunk = False
-    context_count = 0
-    any_hunks = False
-
+    ctx = 0
+    any_hunk = False
     for ln in lines:
         if ln.startswith("@@"):
-            any_hunks = True
-            # check previous hunk
-            if in_hunk and context_count < min_context:
-                return False, f"Hunk has only {context_count} context lines (< {min_context})."
-            # start new hunk
+            any_hunk = True
+            if in_hunk and ctx < min_context:
+                return False, f"Hunk has only {ctx} context lines (< {min_context})."
             in_hunk = True
-            context_count = 0
+            ctx = 0
             continue
         if not in_hunk:
             continue
         if ln.startswith(" "):
-            context_count += 1
-
-    if not any_hunks:
+            ctx += 1
+    if not any_hunk:
         return False, "No @@ hunks found."
-    if in_hunk and context_count < min_context:
-        return False, f"Final hunk has only {context_count} context lines (< {min_context})."
-
+    if in_hunk and ctx < min_context:
+        return False, f"Final hunk has only {ctx} context lines (< {min_context})."
     return True, ""
 
-
-def reject_import_inline_comment(diff_text: str) -> Tuple[bool, str]:
+def _reject_import_inline_comment(diff_text: str) -> Tuple[bool, str]:
     """
-    Reject diffs that *add* inline comments to import lines without removing
-    the original import line. Prevents things like:
-        +from x import y  # Random animal: Giraffe
-    without a matching '-' removal.
+    Forbid adding inline comments to import lines unless the import line is also
+    removed in the same hunk (proper replacement).
     """
     lines = diff_text.splitlines()
     in_hunk = False
-    minus_imports: List[str] = []
-    plus_imports: List[str] = []
-
+    minus_seen = False
     for ln in lines:
         if ln.startswith("@@"):
-            # new hunk
             in_hunk = True
-            minus_imports.clear()
-            plus_imports.clear()
+            minus_seen = False
             continue
         if not in_hunk:
             continue
-
-        if ln.startswith("-") and IMPORT_RE.search(ln[1:]):
-            minus_imports.append(ln[1:])
-        elif ln.startswith("+"):
-            body = ln[1:]
-            if IMPORT_RE.search(body):
-                plus_imports.append(body)
-                if "#" in body and not minus_imports:
-                    return False, "Inline comment added to import line without proper replacement."
+        if ln.startswith("-") and _IMPORT_RE.search(ln[1:]):
+            minus_seen = True
+        if ln.startswith("+") and _IMPORT_RE.search(ln[1:]):
+            if "#" in ln and not minus_seen:
+                return False, "Inline comment added to import line without matching '-' removal."
     return True, ""
 
+def _require_add_and_remove_each_hunk(diff_text: str) -> Tuple[bool, str]:
+    """
+    Universal rule: every hunk must include at least one '+' and at least one '-'.
+    Prevents append-only or delete-only diffs that often fail to anchor.
+    """
+    lines = diff_text.splitlines()
+    in_hunk = False
+    plus = minus = False
+    saw_any = False
+    def flush() -> Tuple[bool, str]:
+        if not in_hunk:
+            return True, ""
+        if not plus or not minus:
+            return False, "Each hunk must contain at least one added ('+') and one removed ('-') line."
+        return True, ""
+    for ln in lines:
+        if ln.startswith("@@"):
+            ok, why = flush()
+            if not ok: return ok, why
+            in_hunk = True; saw_any = True; plus = minus = False
+            continue
+        if not in_hunk: continue
+        if ln.startswith("+"): plus = True
+        elif ln.startswith("-"): minus = True
+    ok, why = flush()
+    if not ok: return ok, why
+    if not saw_any: return False, "No @@ hunks found."
+    return True, ""
 
 def vet_diff(diff_text: str, min_context: int = 1) -> Tuple[bool, str]:
     """
-    Combined gate used by the patch applier:
-    - Reject 'top insert' patterns.
-    - Enforce minimal context per hunk.
-    - Reject import-line inline comments.
-    - Require Random-animal change to be a true replacement (not append-only).
+    Universal diff vetting:
+      - Must start with a 'diff --git' block and at least one @@ hunk
+      - Reject top-of-file blind inserts
+      - Require per-hunk minimum context lines
+      - Forbid import inline-comment append
+      - Require each hunk to have at least one '+' and one '-'
     """
-    if has_top_insert(diff_text):
-        return False, "Rejecting diff: suspicious top-of-file insertion."
-
-    ok, msg = validate_min_context(diff_text, min_context=min_context)
-    if not ok:
-        return False, f"Rejecting diff: insufficient hunk context (min {min_context}). {msg}"
-
-    ok, msg = reject_import_inline_comment(diff_text)
-    if not ok:
-        return False, f"Rejecting diff: {msg}"
-
-    ok, msg = _reject_append_without_remove_random_animal(diff_text)
-    if not ok:
-        return False, f"Rejecting diff: {msg}"
-
+    if "diff --git " not in diff_text:
+        return False, "Missing 'diff --git' header."
+    if not _HUNK_RE.search(diff_text):
+        return False, "No @@ hunks found."
+    if _has_top_insert(diff_text):
+        return False, "Suspicious top-of-file insertion."
+    ok, why = _validate_min_context(diff_text, min_context=min_context)
+    if not ok: return False, why
+    ok, why = _reject_import_inline_comment(diff_text)
+    if not ok: return False, why
+    ok, why = _require_add_and_remove_each_hunk(diff_text)
+    if not ok: return False, why
     return True, ""

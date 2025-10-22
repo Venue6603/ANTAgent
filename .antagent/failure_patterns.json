@@ -908,5 +908,45 @@
     "patterns_found": [],
     "llm_confidence": 0.3,
     "retry_count": 0
+  },
+  {
+    "timestamp": 1761108636.4583821,
+    "goal": "In manager.py, find this line , '# Random animal: Giraffe' and replace it with another comment with a different random animal.",
+    "file_path": "AntAgent/autodev/manager.py",
+    "success": false,
+    "diff_size": 323,
+    "context_lines_used": 5,
+    "anchors_used": [
+      "    Reject diffs that *add* inline comments to import lines without removing",
+      "    the original import line. Prevents things like:",
+      "        +from x import y  # Random animal: Giraffe",
+      "    without a matching '-' removal.",
+      "    \"\"\""
+    ],
+    "error_type": "validation_error",
+    "error_detail": "'apply_failed'",
+    "patterns_found": [],
+    "llm_confidence": 0.3,
+    "retry_count": 0
+  },
+  {
+    "timestamp": 1761108636.4583821,
+    "goal": "In manager.py, find this line , '# Random animal: Giraffe' and replace it with another comment with a different random animal.",
+    "file_path": "AntAgent/autodev/manager.py",
+    "success": false,
+    "diff_size": 323,
+    "context_lines_used": 5,
+    "anchors_used": [
+      "    Reject diffs that *add* inline comments to import lines without removing",
+      "    the original import line. Prevents things like:",
+      "        +from x import y  # Random animal: Giraffe",
+      "    without a matching '-' removal.",
+      "    \"\"\""
+    ],
+    "error_type": "validation_error",
+    "error_detail": "'apply_failed'",
+    "patterns_found": [],
+    "llm_confidence": 0.3,
+    "retry_count": 0
   }
 ]

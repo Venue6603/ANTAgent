@@ -350,63 +350,12 @@ def _llama_chat_diff_only(llm, prompt: str, *, max_tokens: int = 2048) -> str:
 def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, str, str]:
     """
     Generate a patch with detailed explanation of the approach.
-    Enhanced with intelligent file discovery, pattern matching, and learning.
+    Clean implementation with better LLM prompting for accurate diff generation.
     Returns: (summary, unified_diff, explanation)
     """
     import re
     from pathlib import Path
     from difflib import SequenceMatcher
-
-    # Special handling for simple comment replacements
-    if "# Random animal:" in goal and ("replace" in goal.lower() or "change" in goal.lower()):
-        print("[ENGINE] Detected simple comment replacement task")
-        target_paths = constraints.get("paths") or []
-        files = _read_files(target_paths)
-
-        for path, content in files:
-            lines = content.splitlines()
-            for i, line in enumerate(lines):
-                if "# Random animal: Giraffe" in line:
-                    print(f"[ENGINE] Found target at line {i + 1} in {path}")
-
-                    # Extract new animal from goal (default to Elephant)
-                    new_animal = "Elephant"
-                    animal_match = re.search(r'(?:with|to)\s+["\']?#\s*Random\s+animal:\s*(\w+)', goal, re.IGNORECASE)
-                    if animal_match:
-                        new_animal = animal_match.group(1)
-
-                    # Build proper unified diff
-                    start = max(0, i - 3)
-                    end = min(len(lines), i + 4)
-
-                    # Ensure we have at least one line after the change
-                    if end <= i + 1:
-                        end = min(len(lines), i + 2)
-
-                    diff = f"""diff --git a/{path} b/{path}
-                    --- a/{path}
-                    +++ b/{path}
-                    @@ -{start + 1},{end - start} +{start + 1},{end - start} @@
-                    """
-                    for j in range(start, end):
-                        if j == i:
-                            diff += f"-{lines[j]}\n"
-                            diff += f"+# Random animal: {new_animal}\n"
-                        else:
-                            # Ensure proper spacing for context lines
-                            context_line = lines[j] if j < len(lines) else ""
-                            diff += f" {context_line}\n"
-
-                    # Ensure diff ends with a newline if the last line isn't empty
-                    if not diff.endswith('\n\n'):
-                        diff = diff.rstrip() + '\n'
-
-                    summary = f"Goal: {goal}\nTarget: {path} line {i + 1}\nChange: Giraffe -> {new_animal}"
-                    explanation = f"Found '# Random animal: Giraffe' at line {i + 1} in {path}. Replacing with '# Random animal: {new_animal}'."
-
-                    return summary, diff, explanation
-
-        print("[ENGINE] Simple replacement failed, falling back to LLaMA")
 
     # Initialize learning system if available
     try:
@@ -418,14 +367,13 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
 
     target_paths = constraints.get("paths") or []
 
-    # Step 1: Intelligent path expansion
+    # Intelligent path expansion
     all_allowed = _allowed_paths()
     expanded_paths = []
 
     for path in target_paths:
         path_obj = Path(_repo_root() / path)
         if path_obj.is_dir():
-            # Find all Python files in this directory from allowlist
             dir_str = str(path).replace("\\", "/")
             for allowed in all_allowed:
                 allowed_norm = allowed.replace("\\", "/")
@@ -441,205 +389,50 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     if expanded_paths:
         target_paths = list(set(expanded_paths))
 
-    # Step 2: Advanced pattern extraction
-    search_patterns = []
-    patterns_config = [
-        (r'["\'`]([^"\'`]{2,200})["\']', "quoted"),
-        (r'#\s*([A-Za-z][A-Za-z0-9\s:_-]{2,50})', "comment"),
-        (r'\bdef\s+([a-z_][a-z0-9_]*)', "function"),
-        (r'\bclass\s+([A-Z][A-Za-z0-9_]*)', "class"),
-        (r'([a-z_][a-z0-9_]*)\s*=', "variable"),
-        (r'(?:from\s+|import\s+)([a-z_][a-z0-9_.]*)', "import"),
-    ]
-
-    pattern_details = []
-    for regex, ptype in patterns_config:
-        for match in re.finditer(regex, goal, re.IGNORECASE):
-            pattern_details.append({
-                "text": match.group(1),
-                "type": ptype,
-                "full_match": match.group(0)
-            })
-
-    word_patterns = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]{2,}\b', goal)
-
-    # Step 3: File scanning
-    file_scores = {}
-    file_matches = {}
-
-    for path in target_paths:
-        try:
-            full_path = Path(_repo_root() / path)
-            if not (full_path.exists() and full_path.is_file()):
-                continue
-
-            content = full_path.read_text(encoding="utf-8", errors="replace")
-            lines = content.splitlines()
-
-            path_score = 0.0
-            path_matches = []
-
-            for pattern_info in pattern_details:
-                pattern = pattern_info["text"]
-                ptype = pattern_info["type"]
-
-                for i, line in enumerate(lines):
-                    if ptype in ["comment", "quoted"]:
-                        match = pattern.lower() in line.lower()
-                    else:
-                        match = pattern in line
-
-                    if match:
-                        type_weights = {
-                            "quoted": 1.0,
-                            "comment": 0.9,
-                            "function": 0.8,
-                            "class": 0.8,
-                            "variable": 0.5,
-                            "import": 0.4
-                        }
-
-                        weight = type_weights.get(ptype, 0.3)
-                        path_score += weight
-
-                        start = max(0, i - 3)
-                        end = min(len(lines), i + 4)
-                        snippet = []
-                        for j in range(start, end):
-                            prefix = ">>>" if j == i else "   "
-                            snippet.append(f"{prefix} {j + 1:4d}: {lines[j]}")
-
-                        path_matches.append({
-                            "line": i + 1,
-                            "pattern": pattern,
-                            "type": ptype,
-                            "context": "\n".join(snippet),
-                            "exact_line": lines[i]
-                        })
-
-                        break
-
-            for word in word_patterns[:10]:
-                for i, line in enumerate(lines):
-                    line_words = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', line)
-                    for line_word in line_words:
-                        similarity = SequenceMatcher(None, word.lower(), line_word.lower()).ratio()
-                        if similarity > 0.8:
-                            path_score += similarity * 0.2
-
-            filename = Path(path).name
-            if filename.lower() in goal.lower():
-                path_score += 2.0
-
-            if path_score > 0:
-                file_scores[path] = path_score
-                file_matches[path] = path_matches
-
-        except Exception as e:
-            print(f"[SCAN] Error scanning {path}: {e}")
-            continue
-
-    if file_scores:
-        sorted_paths = sorted(file_scores.items(), key=lambda x: x[1], reverse=True)
-        target_paths = [path for path, score in sorted_paths[:3]]
-        print(f"[FILE DISCOVERY] Top matches by score:")
-        for path, score in sorted_paths[:3]:
-            print(f"  {path}: {score:.2f}")
-
-    if has_learning:
-        similar = learning.find_similar_successes(goal, limit=2)
-        if similar:
-            print(f"[LEARNING] Found {len(similar)} similar successful changes")
-            for s in similar:
-                if s['file'] not in target_paths and s['file'] in all_allowed:
-                    target_paths.append(s['file'])
-                    print(f"[LEARNING] Added file from history: {s['file']}")
-
-    # Read files
+    # Read the files
     files = _read_files(target_paths)
 
-    # Build search summary
-    search_summary = ""
-    if file_matches:
-        search_summary = "\n\nFILE ANALYSIS - Pattern matches found:\n"
-        search_summary += "=" * 50 + "\n"
-
-        for path in target_paths:
-            if path not in file_matches:
-                continue
-
-            matches = file_matches[path]
-            score = file_scores.get(path, 0)
-
-            search_summary += f"\n📁 {path} (confidence score: {score:.2f})\n"
-            search_summary += "-" * 40 + "\n"
-
-            by_type = {}
-            for match in matches:
-                ptype = match.get('type', 'unknown')
-                if ptype not in by_type:
-                    by_type[ptype] = []
-                by_type[ptype].append(match)
-
-            for ptype, typed_matches in by_type.items():
-                search_summary += f"\n  [{ptype.upper()}] matches:\n"
-                for match in typed_matches[:2]:
-                    search_summary += f"    • Line {match['line']}: Found '{match['pattern']}'\n"
-                    search_summary += f"      Context:\n"
-                    for ctx_line in match['context'].split('\n')[:5]:
-                        search_summary += f"      {ctx_line}\n"
-                    search_summary += "\n"
-
-    # Prepare files WITHOUT line numbers for diff generation
-    files_for_context = []
+    # Add line numbers for analysis
+    files_with_line_numbers = []
+    files_raw = []
     for path, content in files:
-        files_for_context.append((path, content))
+        lines = content.splitlines()
+        numbered = "\n".join([f"{i + 1:4}: {line}" for i, line in enumerate(lines)])
+        files_with_line_numbers.append((path, numbered))
+        files_raw.append((path, content))
 
     targets = [p for p, _ in files] or target_paths
-    tgt_txt = ", ".join(targets) if targets else "(no specific paths)"
 
-    # LLaMA generation
+    # Generate with LLM
     used_engine = None
     diff_text = ""
     explanation = ""
 
     try:
         from ollama_adapter import Llama
-
         model_path = os.getenv("ANT_LLAMA_MODEL_PATH")
-        if model_path and Path(model_path).exists():
-            n_ctx = 4096
 
-            # Build cleaner diff prompt
-            diff_prompt = f"""Generate a unified diff for this change:
+        if model_path and Path(model_path).exists():
+            n_ctx = 8192
+
+            # Step 1: Analyze the task
+            analysis_prompt = f"""Analyze this code modification task:
 
 GOAL: {goal}
 
 TARGET FILE: {targets[0] if targets else 'unknown'}
 
-CURRENT FILE CONTENT (no line numbers):
-{_budgeted_files_block(files_for_context, n_ctx // 2)}
+FILE CONTENT WITH LINE NUMBERS:
+{_budgeted_files_block(files_with_line_numbers, n_ctx // 3)}
 
-INSTRUCTIONS:
-1. Find the exact line that needs to change
-2. Create a unified diff with proper format
-3. Include 3 lines of context before and after the change
+Please provide:
+1. What specific change is needed
+2. The exact location (line number) where the change should be made
+3. What the old content is
+4. What the new content should be
+5. Any challenges (like duplicate lines, ambiguous locations, etc.)
 
-EXAMPLE FORMAT:
-diff --git a/path/to/file.py b/path/to/file.py
---- a/path/to/file.py
-+++ b/path/to/file.py
-@@ -12,7 +12,7 @@
- first context line
- second context line
- third context line
--old line to change
-+new line replacement
- context after line
- another context line
- last context line
-
-Output ONLY the diff. No explanations, no line numbers like "15:", no markdown."""
+Be precise and thorough in your analysis."""
 
             llm = Llama(
                 model_path=model_path,
@@ -649,23 +442,76 @@ Output ONLY the diff. No explanations, no line numbers like "15:", no markdown."
                 verbose=False,
             )
 
+            # Get analysis
+            analysis_result = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": "You are a code analysis expert. Analyze the task thoroughly."},
+                    {"role": "user", "content": analysis_prompt},
+                ],
+                temperature=0.0,
+                top_p=0.1,
+                max_tokens=1024,
+            )
+
+            analysis = analysis_result["choices"][0]["message"]["content"] or ""
+            explanation = analysis
+            print(f"[ENGINE] LLM Analysis completed")
+
+            # Step 2: Generate the unified diff
+            diff_prompt = f"""Based on your analysis, generate a unified diff.
+
+PREVIOUS ANALYSIS:
+{analysis}
+
+ACTUAL FILE CONTENT (WITHOUT LINE NUMBERS):
+{_budgeted_files_block(files_raw, n_ctx // 2)}
+
+UNIFIED DIFF FORMAT REQUIREMENTS:
+1. Start with: diff --git a/{targets[0]} b/{targets[0]}
+2. Next line: --- a/{targets[0]}
+3. Next line: +++ b/{targets[0]}
+4. Hunk header: @@ -start,count +start,count @@
+   - start = starting line number
+   - count = number of lines in this section
+5. Context lines (unchanged): start with single space
+6. Removed lines: start with single minus -
+7. Added lines: start with single plus +
+8. Include at least 3 context lines before and after changes
+9. Context lines must match the original file EXACTLY
+
+EXAMPLE STRUCTURE:
+diff --git a/path/to/file.py b/path/to/file.py
+--- a/path/to/file.py
++++ b/path/to/file.py
+@@ -15,7 +15,7 @@
+ context line at 15
+ context line at 16
+ context line at 17
+-old line at 18 to be removed
++new line at 18 to be added
+ context line at 19
+ context line at 20
+ context line at 21
+
+Generate the unified diff for: {goal}
+Output ONLY the diff. No explanations, no markdown."""
+
             result = llm.create_chat_completion(
                 messages=[
                     {"role": "system",
-                     "content": "You are a unified diff generator. Output ONLY valid unified diff format."},
+                     "content": "You are a unified diff generator. Output only valid unified diff format."},
                     {"role": "user", "content": diff_prompt},
                 ],
                 temperature=0.0,
                 top_p=0.05,
-                max_tokens=1024,
+                max_tokens=2048,
             )
 
             diff_text = result["choices"][0]["message"]["content"] or ""
             used_engine = "llama"
 
-            # Extract and clean the diff
+            # Validate and clean
             candidate = _extract_unified_diff(diff_text or "")
-            valid_local = False
             if candidate:
                 try:
                     rel = _first_diff_target_path(candidate)
@@ -676,49 +522,133 @@ Output ONLY the diff. No explanations, no line numbers like "15:", no markdown."
                             candidate = fixed
                 except Exception:
                     pass
+
                 try:
                     preflight_verify_paths(candidate)
                     _validate_unified_diff(candidate)
                     diff_text = candidate
-                    valid_local = True
-                    print(f"[ENGINE] LLaMA successful")
+                    print(f"[ENGINE] LLM diff validated successfully")
                 except Exception as e:
-                    print(f"[ENGINE] LLaMA validation failed: {e}")
-                    valid_local = False
+                    print(f"[ENGINE] LLM diff validation failed: {e}")
 
-            if not valid_local:
+                    # Retry with additional guidance
+                    retry_prompt = f"""The previous diff had issues. Please generate a correct unified diff.
+
+Common issues to avoid:
+- Make sure context lines start with a single space
+- Ensure line numbers in @@ are correct
+- Context must match the file exactly
+- Use proper diff headers
+
+FILE CONTENT (for reference):
+{_budgeted_files_block(files_raw, 2000)}
+
+Task: {goal}
+
+Generate a valid unified diff that:
+1. Starts with diff --git
+2. Has proper --- and +++ headers
+3. Has correct @@ line ranges
+4. Shows the actual change with - and + lines
+5. Includes context lines with space prefix
+
+Output only the diff."""
+
+                    retry_result = llm.create_chat_completion(
+                        messages=[
+                            {"role": "system", "content": "Generate only a valid unified diff."},
+                            {"role": "user", "content": retry_prompt},
+                        ],
+                        temperature=0.0,
+                        top_p=0.05,
+                        max_tokens=1024,
+                    )
+
+                    retry_diff = retry_result["choices"][0]["message"]["content"] or ""
+                    candidate = _extract_unified_diff(retry_diff)
+                    if candidate:
+                        try:
+                            _validate_unified_diff(candidate)
+                            diff_text = candidate
+                            print(f"[ENGINE] LLM retry successful")
+                        except Exception as e:
+                            print(f"[ENGINE] LLM retry also failed: {e}")
+                            diff_text = ""
+            else:
+                print(f"[ENGINE] Could not extract valid diff from LLM output")
                 diff_text = ""
 
     except Exception as e:
-        print(f"[ENGINE] LLaMA error: {e}")
+        print(f"[ENGINE] LLM error: {e}")
         used_engine = None
+        diff_text = ""
 
     # Fallback to OpenAI if needed
     if not diff_text or not diff_text.lstrip().startswith("diff --git"):
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             print("[ENGINE] Using OpenAI as fallback")
-            # [Keep existing OpenAI code]
+            try:
+                import requests, json
 
-    # Extract and clean
-    diff = _extract_unified_diff(diff_text)
+                resp = requests.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    data=json.dumps({
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {"role": "system", "content": "You are a unified diff generator."},
+                            {"role": "user", "content": f"""
+Generate a unified diff for this task: {goal}
+
+File: {targets[0] if targets else 'unknown'}
+
+Content:
+{_budgeted_files_block(files_raw, 3000)}
+
+Requirements:
+- Output a valid unified diff starting with 'diff --git'
+- Include proper context lines
+- Show the exact change needed
+
+Output only the diff, no explanations."""},
+                        ],
+                        "temperature": 0
+                    }),
+                    timeout=30,
+                )
+
+                if resp.ok:
+                    openai_diff = resp.json()["choices"][0]["message"]["content"]
+                    candidate = _extract_unified_diff(openai_diff)
+                    if candidate:
+                        try:
+                            _validate_unified_diff(candidate)
+                            diff_text = candidate
+                            used_engine = "openai"
+                            print(f"[ENGINE] OpenAI fallback successful")
+                        except Exception as e:
+                            print(f"[ENGINE] OpenAI diff also invalid: {e}")
+                            diff_text = ""
+            except Exception as e:
+                print(f"[ENGINE] OpenAI error: {e}")
+
+    # Extract final diff
+    diff = _extract_unified_diff(diff_text) if diff_text else ""
 
     # Build summary
     summary_parts = [
         f"Goal: {goal}",
         f"Engine: {used_engine or 'none'}",
-        f"Files analyzed: {len(file_scores) if file_scores else 0}",
-        f"Patterns found: {sum(len(m) for m in file_matches.values()) if file_matches else 0}",
         f"Target: {targets[0] if targets else 'none'}"
     ]
 
-    if file_scores:
-        best_match = max(file_scores.items(), key=lambda x: x[1])
-        summary_parts.append(f"Best match: {best_match[0]} (score: {best_match[1]:.1f})")
+    if not diff:
+        summary_parts.append("Result: Failed to generate valid diff")
 
     summary = "\n".join(summary_parts)
 
-    return summary, diff, explanation
+    return summary, diff, explanation or "No explanation generated"
 
 import re
 from typing import Optional

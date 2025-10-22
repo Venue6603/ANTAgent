@@ -1604,6 +1604,8 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                 used_engine = "ollama"
                 print("[ENGINE] LLM generated valid diff (first try)")
             else:
+                print(f"[ENGINE] LLM diff validation failed: {why1}")
+                print(f"[DEBUG] Validating diff (first 500 chars):\n{candidate[:500]}")
                 # Critique & retry with the exact validator error
                 critic = (
                     "Your previous diff was rejected for the reason below.\n"
@@ -1629,6 +1631,10 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
                     print("[ENGINE] Could not extract valid diff from critique retry")
         else:
             print("[ENGINE] Could not extract valid diff from LLM output")
+            if candidate:
+                print(f"[DEBUG] Basic diff check failed for candidate (first 200 chars):\n{candidate[:200]}")
+            else:
+                print("[DEBUG] No candidate diff extracted from LLM response")
 
     except Exception as e:
         print(f"[ENGINE] LLM error: {e}")

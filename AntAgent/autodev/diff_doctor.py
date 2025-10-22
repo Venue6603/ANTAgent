@@ -99,9 +99,6 @@ def _reject_append_without_remove_random_animal(diff_text: str) -> tuple[bool, s
     if not ok:
         return ok, why
     return (True, "")
-from __future__ import annotations
-import re
-from typing import List, Tuple
 
 _HUNK_RE = re.compile(r"^@@\s*-\d+(?:,\d+)?\s*\+\d+(?:,\d+)?\s*@@", re.M)
 _IMPORT_RE = re.compile(r"^\s*(from\s+\S+\s+import\b|import\s+\S+)")
@@ -178,26 +175,38 @@ def _require_add_and_remove_each_hunk(diff_text: str) -> Tuple[bool, str]:
     """
     Universal rule: every hunk must include at least one '+' and at least one '-'.
     Prevents append-only or delete-only diffs that often fail to anchor.
+    
+    EXCEPTION: Pure insertions are allowed if they have sufficient context lines
+    to anchor properly (at least 2 context lines).
     """
     lines = diff_text.splitlines()
     in_hunk = False
     plus = minus = False
+    context_count = 0
     saw_any = False
     def flush() -> Tuple[bool, str]:
         if not in_hunk:
             return True, ""
+        # Allow pure insertions if they have sufficient context
+        if plus and not minus and context_count >= 2:
+            return True, ""
+        # Allow pure deletions if they have sufficient context  
+        if minus and not plus and context_count >= 2:
+            return True, ""
+        # Require both + and - for hunks with insufficient context
         if not plus or not minus:
-            return False, "Each hunk must contain at least one added ('+') and one removed ('-') line."
+            return False, "Each hunk must contain at least one added ('+') and one removed ('-') line, unless it has sufficient context (2+ lines)."
         return True, ""
     for ln in lines:
         if ln.startswith("@@"):
             ok, why = flush()
             if not ok: return ok, why
-            in_hunk = True; saw_any = True; plus = minus = False
+            in_hunk = True; saw_any = True; plus = minus = False; context_count = 0
             continue
         if not in_hunk: continue
         if ln.startswith("+"): plus = True
         elif ln.startswith("-"): minus = True
+        elif ln.startswith(" "): context_count += 1
     ok, why = flush()
     if not ok: return ok, why
     if not saw_any: return False, "No @@ hunks found."

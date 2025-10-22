@@ -1501,7 +1501,7 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     """
     import os, re, json
     from pathlib import Path
-
+    global _debug_collector
     # Validator (if unavailable, accept anything—keeps old behavior)
     try:
         from AntAgent.autodev.diff_doctor import vet_diff
@@ -1827,7 +1827,7 @@ Removed lines start with '-' and added lines with '+'. Do not include analysis o
     if not diff_text and not explanation:
         explanation = "No explanation available"
 
-    global _debug_collector
+
     _debug_collector["engine_used"] = used_engine or "unknown"
     _debug_collector["llm_explanation"] = explanation or "none"
 

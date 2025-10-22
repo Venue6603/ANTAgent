@@ -24,6 +24,12 @@ FAILURE_DB = LOG_DIR / "failure_patterns.json"
 CONTEXT_MEMORY = LOG_DIR / "context_memory.json"
 _QUEUE_PATH = LOG_DIR / "si_queue.jsonl"
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_LESSONS_PATH = _REPO_ROOT / ".antagent" / "lessons.json"
+
+# Ensure directory exists
+_LESSONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 # Default lessons structure
 DEFAULT = {
     "counters": {
@@ -1277,6 +1283,7 @@ def _goal_adjacent_anchors(file_text: str, goal: str, radius: int = 2) -> list[s
 
 
 def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
+    outcome: dict = {"applied": False, "kept": False, "message": "", "results": []}
     """
     Attempt up to `rounds` self-edits with advanced learning capabilities.
     Auto-stashes unrelated changes before running, then restores them afterwards.
@@ -1501,6 +1508,8 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             if not diff:
                 print(f"[DEBUG] No diff produced. Summary: {summary[:100] if summary else 'none'}")
                 print(f"[DEBUG] Explanation: {explanation[:200] if explanation else 'none'}")
+                if not isinstance(outcome, dict):
+                    outcome = {"applied": False, "kept": False, "message": "", "results": []}
                 outcome["message"] = "no diff produced by model"
                 results.append(outcome)
                 continue

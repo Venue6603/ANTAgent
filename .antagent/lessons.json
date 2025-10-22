@@ -1,0 +1,88 @@
+{
+  "total_attempts": 2,
+  "successful_changes": 0,
+  "failure_reasons": {
+    "apply_failed": 1,
+    "validation_error": 1
+  },
+  "anchor_effectiveness": {},
+  "file_difficulty": {
+    "AntAgent/autodev/manager.py": 0.75
+  },
+  "pattern_success_rate": {},
+  "optimal_settings": {
+    "context_lines": 3,
+    "max_diff_size": 500,
+    "preferred_engine": "llama"
+  },
+  "_failures": [
+    {
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "timestamp": 1761110672.210099
+    },
+    {
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "timestamp": 1761110672.210099
+    }
+  ],
+  "detailed_attempts": [
+    {
+      "timestamp": 1761110672.210099,
+      "goal": "In manager.py, find this line , '# Random animal: Giraffe' and replace it with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "",
+      "llm_explanation": "",
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761110672.210099,
+      "goal": "In manager.py, find this line , '# Random animal: Giraffe' and replace it with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "",
+      "llm_explanation": "",
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    }
+  ]
+}

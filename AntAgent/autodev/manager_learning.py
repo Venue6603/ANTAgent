@@ -60,24 +60,22 @@ def _extract_unified_diff_from_text(text: str) -> str | None:
     return text[m.start():].strip()
 
 def _repo_root() -> Path:
-    # try git first, fall back to parents
-    try:
-        import subprocess, sys
-        out = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=2
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            return Path(out.stdout.strip())
-    except Exception:
-        pass
-    # fallback: walk up until we see a .git folder or run out
-    p = Path(__file__).resolve()
-    for _ in range(10):
-        if (p / ".git").exists():
-            return p
-        p = p.parent
-    return Path(__file__).resolve().parents[1]
+    # repo root = AntAgent/.. (two parents up from this file)
+    return Path(__file__).resolve().parents[2]
+
+def ensure_dirs(self):
+    """All artifacts live under REPO_ROOT/.antagent (NOT process CWD)."""
+    global LOG_DIR, HISTORY, LESSONS, PATTERNS, SUCCESS_DB, FAILURE_DB, CONTEXT_MEMORY
+    base = _repo_root() / ".antagent"
+    base.mkdir(parents=True, exist_ok=True)
+
+    LOG_DIR = base
+    HISTORY = base / "self_improve_history.jsonl"
+    LESSONS = base / "lessons.json"
+    PATTERNS = base / "pattern_recognition.json"
+    SUCCESS_DB = base / "successful_patterns.json"
+    FAILURE_DB = base / "failure_patterns.json"
+    CONTEXT_MEMORY = base / "context_memory.json"
 
 def _read_text_safe(p: Path) -> str:
     try:
@@ -239,9 +237,9 @@ class EnhancedLearningSystem:
         self.context_memory = self.load_context_memory()
 
     def ensure_dirs(self):
-        """Ensure all artifacts live under REPO_ROOT/.antagent (not process CWD)."""
-        global LOG_DIR, HISTORY, LESSONS, PATTERNS, SUCCESS_DB, FAILURE_DB, CONTEXT_MEMORY, _QUEUE_PATH
-        base = _REPO_ROOT / ".antagent"
+        """All artifacts live under REPO_ROOT/.antagent (NOT process CWD)."""
+        global LOG_DIR, HISTORY, LESSONS, PATTERNS, SUCCESS_DB, FAILURE_DB, CONTEXT_MEMORY
+        base = _repo_root() / ".antagent"
         base.mkdir(parents=True, exist_ok=True)
 
         LOG_DIR = base
@@ -251,7 +249,6 @@ class EnhancedLearningSystem:
         SUCCESS_DB = base / "successful_patterns.json"
         FAILURE_DB = base / "failure_patterns.json"
         CONTEXT_MEMORY = base / "context_memory.json"
-        _QUEUE_PATH = base / "si_queue.jsonl"
 
     def load_lessons(self) -> Dict:
         if LESSONS.exists():

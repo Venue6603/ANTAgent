@@ -1,14 +1,30 @@
 from __future__ import annotations
 
 import contextlib
-import json, re
+import json
+import re
+import time
+import os
+import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Iterable, Tuple
+from dataclasses import dataclass, field, asdict
+from collections import defaultdict
+from datetime import datetime, timedelta
 
+# Enhanced storage paths
 LOG_DIR = Path(".antagent")
+LOG_DIR.mkdir(exist_ok=True)
 HISTORY = LOG_DIR / "self_improve_history.jsonl"
 LESSONS = LOG_DIR / "lessons.json"
+PATTERNS = LOG_DIR / "pattern_recognition.json"
+SUCCESS_DB = LOG_DIR / "successful_patterns.json"
+FAILURE_DB = LOG_DIR / "failure_patterns.json"
+CONTEXT_MEMORY = LOG_DIR / "context_memory.json"
+_QUEUE_PATH = LOG_DIR / "si_queue.jsonl"
 
+# Default lessons structure
 DEFAULT = {
     "counters": {
         "top_insert_detected": 0,
@@ -20,40 +36,6 @@ DEFAULT = {
     "anchor_phrases": [],   # stable snippets to anchor on next runs
     "last_10_goals": [],
 }
-
-from dataclasses import dataclass, asdict
-import time, json, os
-from pathlib import Path
-from typing import Optional, Iterable
-
-_AUTODEV_DIR = Path(".antagent")
-_AUTODEV_DIR.mkdir(exist_ok=True)
-_QUEUE_PATH   = _AUTODEV_DIR / "si_queue.jsonl"
-_LESSONS_PATH = _AUTODEV_DIR / "lessons.json"
-
-import json
-import re
-import time
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field, asdict
-from collections import defaultdict
-from datetime import datetime, timedelta
-
-# Enhanced storage paths
-LOG_DIR = Path(".antagent")
-HISTORY = LOG_DIR / "self_improve_history.jsonl"
-LESSONS = LOG_DIR / "lessons.json"
-PATTERNS = LOG_DIR / "pattern_recognition.json"
-SUCCESS_DB = LOG_DIR / "successful_patterns.json"
-FAILURE_DB = LOG_DIR / "failure_patterns.json"
-CONTEXT_MEMORY = LOG_DIR / "context_memory.json"
-
-import re
-from pathlib import Path
-
-import os, re
-from pathlib import Path
 
 def _extract_unified_diff_from_text(text: str) -> str | None:
     """
@@ -184,48 +166,34 @@ def _diff_touches_any_literal_in_real_file(diff_text: str, literals: list[str]) 
 @dataclass
 class LearningContext:
     """Enhanced context for learning from attempts with detailed debugging information"""
-    # Basic info
+    # Basic info (no defaults)
     timestamp: float
     goal: str
     file_path: str
     success: bool
-    
-    # Diff information
     diff_size: int
-    diff_content: str = ""  # Store the actual diff for analysis
-    
-    # Context and anchoring
     context_lines_used: int
     anchors_used: List[str]
     
-    # LLM information
+    # All fields with defaults
+    diff_content: str = ""  # Store the actual diff for analysis
     llm_explanation: str = ""  # The explanation the LLM provided
     engine_used: str = ""  # "llama", "openai", "deepseek", etc.
     llm_confidence: float = 0.0
     retry_count: int = 0
-    
-    # Error tracking
     error_type: Optional[str] = None
     error_detail: Optional[str] = None
     debug_errors: List[str] = field(default_factory=list)  # All debug messages
     validation_errors: List[str] = field(default_factory=list)  # Specific validation failures
-    
-    # Performance metrics
     generation_time_ms: float = 0.0
     validation_time_ms: float = 0.0
     apply_time_ms: float = 0.0
     total_time_ms: float = 0.0
-    
-    # Pattern recognition
     patterns_found: List[str] = field(default_factory=list)
     pattern_type: str = ""
-    
-    # File context
     file_size_bytes: int = 0
     file_line_count: int = 0
     target_line_number: int = 0
-    
-    # Learning metadata
     learning_strategy: str = ""  # "conservative", "standard", "confident"
     predicted_difficulty: float = 0.0
     similar_successes_used: int = 0
@@ -234,6 +202,7 @@ class LearningContext:
 @dataclass
 class PatternMemory:
     """Remembers successful patterns for specific types of changes"""
+    # Fields without defaults
     pattern_type: str  # e.g., "comment_replacement", "function_rename", "import_cleanup"
     success_rate: float
     total_attempts: int
@@ -936,8 +905,10 @@ def _normalize_targets_to_allowlist(targets: list[str], allowed: list[str]) -> l
     return resolved
 @dataclass
 class ObjectiveItem:
+    # Fields without defaults
     ts: float
     objective: str
+    # Fields with defaults
     source: str = "user"   # user | heuristic | retry
     priority: int = 0      # higher first
     rounds: int = 1

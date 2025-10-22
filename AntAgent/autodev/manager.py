@@ -1192,6 +1192,10 @@ def create_enhanced_learning_context(goal: str, file_path: str, success: bool,
     )
 
 
+def list_paths() -> list[str]:
+    """Return the list of allowed paths for self-improvement"""
+    return _allowed_paths()
+
 def read_files(paths: list) -> dict:
     """
     Returns {path: text} for each path (used by /code/read_files route).

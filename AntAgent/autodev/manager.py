@@ -1530,12 +1530,23 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     Generate a patch with detailed explanation of the approach.
     Returns: (summary, unified_diff, explanation)
     """
-    import re
+    import os, re, json
     from pathlib import Path
 
+    # Validator to block top-inserts / import-inline comment mistakes and require context
+    try:
+        from AntAgent.autodev.diff_doctor import vet_diff
+    except Exception:
+        # Soft fallback: accept anything if validator unavailable
+        def vet_diff(x: str, min_context: int = 1):
+            return True, ""
+
+    # ------------------------------
+    # 0) Target path resolution
+    # ------------------------------
     target_paths = constraints.get("paths") or []
 
-    # Path expansion
+    # Path expansion (retain your original behavior)
     all_allowed = _allowed_paths()
     expanded_paths = []
     for path in target_paths:
@@ -1561,10 +1572,11 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     if not files:
         return "No files to process", "", "No target files found"
 
-    path, content = files[0]  # Focus on first file
-    lines = content.splitlines()
+    # Focus on first file (retain your behavior)
+    path, content = files[0]
 
-    # Create numbered version for analysis
+    # Create numbered version for analysis (retain)
+    lines = content.splitlines()
     numbered_lines = [f"{i + 1:4}: {line}" for i, line in enumerate(lines)]
     numbered_content = "\n".join(numbered_lines)
 
@@ -1572,97 +1584,151 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     diff_text = ""
     explanation = ""
 
+    # ------------------------------
+    # 1) Primary: Ollama (DeepSeek)
+    # ------------------------------
     try:
         from ollama_adapter import Llama
-        model_path = os.getenv("ANT_LLAMA_MODEL_PATH")
 
-        if model_path and Path(model_path).exists():
-            n_ctx = 8192
+        # Strong, diff-only system prompt + tiny few-shot to anchor format
+        DIFF_SYSTEM_PROMPT = (
+            "You are a code refactoring assistant. Your ONLY output must be a valid unified diff "
+            "that can be applied with `git apply`.\n\n"
+            "STRICT RULES:\n"
+            "- Output ONLY the diff. No prose, no code fences.\n"
+            f"- Use exactly this header format:\n"
+            f"  diff --git a/{path} b/{path}\n"
+            "  index 0000000..0000000 100644\n"
+            f"  --- a/{path}\n"
+            f"  +++ b/{path}\n"
+            "- Provide enough unchanged context lines around edits so the patch anchors reliably.\n"
+            "- Edit only what the objective requires.\n"
+        )
 
-            # Single combined prompt - analysis and diff generation together
-            combined_prompt = f"""Task: {goal}
+        DIFF_FEWSHOT = (
+            "Example (change a single comment token):\n"
+            f"diff --git a/{path} b/{path}\n"
+            "index 0000000..0000000 100644\n"
+            f"--- a/{path}\n"
+            f"+++ b/{path}\n"
+            "@@ -10,7 +10,7 @@ def f():\n"
+            "     x = 1\n"
+            "     y = 2\n"
+            "     z = x + y\n"
+            "-    # Random animal: Giraffe\n"
+            "+    # Random animal: Pangolin\n"
+            "     return z\n"
+        )
 
-File to modify: {path}
+        CRITIC_RUBRIC = (
+            "Your previous diff was rejected for the reason shown below.\n"
+            "You MUST output a corrected unified diff that fixes ONLY that problem.\n"
+            "Rules reminder:\n"
+            "- No prose. No code fences. Diff only.\n"
+            f"- Header lines must match exactly this target file path: {path}\n"
+            "- Include sufficient context lines.\n"
+            "- Do not inline comments at import/from statements unless replacing the whole line with '-' and '+' pairs.\n"
+        )
 
-Current file content with line numbers:
-{numbered_content[:6000]}
+        # Initialize model via Ollama adapter
+        llm = Llama(
+            model=os.getenv("ANT_OLLAMA_MODEL", "deepseek-coder-v2:16b"),
+            host=os.getenv("ANT_OLLAMA_HOST", "http://localhost:11434"),
+            num_ctx=4096,
+        )
 
-Instructions:
-1. First, identify what needs to change and where
-2. Then create a unified diff showing that change
+        # Build the user content (include numbered content for stable anchoring)
+        user_1 = (
+            f"Objective:\n{goal.strip()}\n\n"
+            f"Target file path (must match headers exactly):\n{path}\n\n"
+            "Current file content with line numbers (truncated for context):\n"
+            "-----8<-----\n"
+            f"{numbered_content[:6000]}\n"
+            "-----8<-----\n\n"
+            "Produce ONLY the unified diff.\n"
+        )
 
-A unified diff has this structure:
-- Header: diff --git a/filepath b/filepath
-- File markers: --- a/filepath and +++ b/filepath  
-- Hunk header: @@ -start,count +start,count @@
-- Lines: unchanged lines start with space, removed with -, added with +
+        # First attempt
+        raw1 = llm.complete(
+            system=DIFF_SYSTEM_PROMPT,
+            prompt=DIFF_FEWSHOT + "\n" + user_1,
+            temperature=0.1,
+            max_tokens=2048,
+            stop=["```", "\x00"],
+        )
+        full_response = (raw1 or "").strip()
 
-Your response should be:
-1. Brief analysis of what to change
-2. The complete unified diff
+        # If the model included analysis, split it out (retain your behavior)
+        if "diff --git" in full_response:
+            parts = full_response.split("diff --git", 1)
+            explanation = parts[0].strip()  # usually empty due to diff-only rule
+            candidate = "diff --git" + parts[1]
+        else:
+            explanation = full_response[:200]
+            candidate = full_response
 
-Generate the unified diff now:"""
+        # Normalize candidate using your helper (retain)
+        candidate = _extract_unified_diff(candidate) or ""
 
-            llm = Llama(
-                model_path=model_path,
-                n_ctx=n_ctx,
-                n_batch=256,
-                n_gpu_layers=gpu_layers,
-                verbose=False,
+        # Validate with structural checks (retain) + semantic validator
+        def _basic_diff_ok(d: str) -> bool:
+            return (
+                d.startswith(f"diff --git a/{path} b/{path}") and
+                ("--- a/" in d and "+++ b/" in d) and
+                "@@" in d and
+                any(ch in d for ch in ("+\n", "-\n", "\n+ ", "\n- "))
             )
 
-            result = llm.create_chat_completion(
-                messages=[
-                    {"role": "system", "content": "You are a code editor. Analyze tasks and generate unified diffs."},
-                    {"role": "user", "content": combined_prompt},
-                ],
-                temperature=0.0,
-                top_p=0.05,
-                max_tokens=2048,
-            )
-
-            full_response = result["choices"][0]["message"]["content"] or ""
-
-            # Extract explanation (everything before the diff)
-            if "diff --git" in full_response:
-                parts = full_response.split("diff --git", 1)
-                explanation = parts[0].strip()
-                diff_text = "diff --git" + parts[1]
+        if candidate and _basic_diff_ok(candidate):
+            ok1, why1 = vet_diff(candidate, min_context=1)
+            if ok1:
+                diff_text = candidate
+                used_engine = "ollama"
+                print("[ENGINE] LLM generated valid diff (first try)")
             else:
-                explanation = full_response[:200]
-                diff_text = full_response
-
-            # Clean and validate the diff
-            candidate = _extract_unified_diff(diff_text)
-            if candidate:
-                # Basic validation - check it has the required parts
-                has_header = "diff --git" in candidate
-                has_file_markers = "---" in candidate and "+++" in candidate
-                has_hunk = "@@" in candidate
-                has_changes = "-" in candidate or "+" in candidate
-
-                if has_header and has_file_markers and has_hunk and has_changes:
-                    diff_text = candidate
-                    used_engine = "llama"
-                    print(f"[ENGINE] LLM generated valid diff")
+                # Critique & retry once with validator error
+                critic_prompt = (
+                    CRITIC_RUBRIC
+                    + "\n\nREJECTION REASON:\n"
+                    + str(why1)
+                    + "\n\nYour previous (invalid) diff:\n"
+                    + candidate
+                    + "\n\nRe-output a corrected diff now (diff only):"
+                )
+                raw2 = llm.complete(
+                    system=DIFF_SYSTEM_PROMPT,
+                    prompt=critic_prompt,
+                    temperature=0.05,
+                    max_tokens=2048,
+                    stop=["```", "\x00"],
+                )
+                full2 = (raw2 or "").strip()
+                cand2 = _extract_unified_diff(full2) or ""
+                if cand2 and _basic_diff_ok(cand2):
+                    ok2, why2 = vet_diff(cand2, min_context=1)
+                    if ok2:
+                        diff_text = cand2
+                        used_engine = "ollama"
+                        print("[ENGINE] LLM generated valid diff after critique")
+                    else:
+                        print(f"[ENGINE] Critique retry still invalid: {why2}")
                 else:
-                    print(f"[ENGINE] LLM diff missing required parts")
-                    diff_text = ""
-            else:
-                print(f"[ENGINE] Could not extract valid diff from LLM output")
-                diff_text = ""
+                    print("[ENGINE] Could not extract valid diff from critique retry")
+        else:
+            print("[ENGINE] Could not extract valid diff from LLM output")
 
     except Exception as e:
         print(f"[ENGINE] LLM error: {e}")
-        diff_text = ""
 
-    # If LLM failed, try OpenAI
+    # -----------------------------------
+    # 2) Fallback: OpenAI (retain intent)
+    # -----------------------------------
     if not diff_text:
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             print("[ENGINE] Trying OpenAI fallback")
             try:
-                import requests, json
+                import requests
 
                 resp = requests.post(
                     "https://api.openai.com/v1/chat/completions",
@@ -1671,39 +1737,54 @@ Generate the unified diff now:"""
                         "model": "gpt-4o-mini",
                         "messages": [
                             {"role": "system",
-                             "content": "You are a diff generator. Create unified diffs for code changes."},
+                             "content": "You are a diff generator. Output ONLY a valid unified diff for the requested change."},
                             {"role": "user", "content": f"""Task: {goal}
 
 File: {path}
-Content (first 100 lines):
-{chr(10).join(lines[:100])}
+Content (first 120 lines for context, include unchanged lines around edits):
+{chr(10).join(lines[:120])}
 
-Generate a unified diff for this change. 
+Output ONLY the unified diff.
 Start with: diff --git a/{path} b/{path}
 Include --- and +++ lines
 Include @@ hunk markers
 Show removed lines with - and added lines with +
-Include context lines with space prefix"""}
+Include a few context lines with space prefix"""}
                         ],
-                        "temperature": 0
+                        "temperature": 0,
+                        "max_tokens": 2048
                     }),
                     timeout=30,
                 )
 
                 if resp.ok:
                     openai_response = resp.json()["choices"][0]["message"]["content"]
-                    candidate = _extract_unified_diff(openai_response)
-                    if candidate:
-                        diff_text = candidate
-                        used_engine = "openai"
-                        explanation = "Generated via OpenAI"
+                    cand = _extract_unified_diff(openai_response) or ""
+                    if cand:
+                        okb, whyb = vet_diff(cand, min_context=1)
+                        if okb:
+                            diff_text = cand
+                            used_engine = "openai"
+                            explanation = "Generated via OpenAI"
+                            print("[ENGINE] OpenAI generated valid diff")
+                        else:
+                            print(f"[ENGINE] OpenAI diff rejected by validator: {whyb}")
+                    else:
+                        print("[ENGINE] OpenAI response lacked a valid diff")
+                else:
+                    print(f"[ENGINE] OpenAI HTTP {resp.status_code}: {resp.text[:200]}")
+
             except Exception as e:
                 print(f"[ENGINE] OpenAI error: {e}")
 
-    # Build summary
+    # ------------------------------
+    # 3) Build summary & return
+    # ------------------------------
     summary = f"Goal: {goal}\nTarget: {path}\nEngine: {used_engine or 'failed'}"
+    if not diff_text and not explanation:
+        explanation = "No explanation available"
 
-    return summary, diff_text, explanation or "No explanation available"
+    return summary, diff_text, explanation
 
 def self_improve_with_retry(goal: str, constraints: Dict, max_attempts: int = 3) -> Dict:
     """

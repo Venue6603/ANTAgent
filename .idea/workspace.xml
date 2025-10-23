@@ -8,7 +8,6 @@
       <change beforePath="$PROJECT_DIR$/.antagent/failure_patterns.json" beforeDir="false" afterPath="$PROJECT_DIR$/.antagent/failure_patterns.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.antagent/lessons.json" beforeDir="false" afterPath="$PROJECT_DIR$/.antagent/lessons.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.antagent/pattern_recognition.json" beforeDir="false" afterPath="$PROJECT_DIR$/.antagent/pattern_recognition.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/AntAgent/autodev/manager_learning.py" beforeDir="false" afterPath="$PROJECT_DIR$/AntAgent/autodev/manager_learning.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -97,7 +96,7 @@
       <workItem from="1761021724956" duration="1052000" />
       <workItem from="1761022804624" duration="1271000" />
       <workItem from="1761103101342" duration="10122000" />
-      <workItem from="1761197669436" duration="6593000" />
+      <workItem from="1761197669436" duration="6907000" />
     </task>
     <servers />
   </component>

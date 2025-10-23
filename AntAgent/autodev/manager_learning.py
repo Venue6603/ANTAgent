@@ -167,6 +167,11 @@ def _diff_touches_any_literal_in_real_file(diff_text: str, literals: list[str]) 
                 return True
     return False
 
+
+
+from dataclasses import dataclass, field  # (already imported above; keep it)
+from typing import Optional
+
 @dataclass
 class LearningContext:
     """Enhanced context for learning from attempts with detailed debugging information"""
@@ -177,30 +182,18 @@ class LearningContext:
     success: bool
     diff_size: int
     context_lines_used: int
-    anchors_used: List[str]
-    
-    # All fields with defaults
-    diff_content: str = ""  # Store the actual diff for analysis
-    llm_explanation: str = ""  # The explanation the LLM provided
-    engine_used: str = ""  # "llama", "openai", "deepseek", etc.
+    anchors_used: list[str]
+
+    # Optional fields with defaults
+    diff_content: str = ""              # Store the actual diff for analysis
+    llm_explanation: str = ""           # The explanation the LLM provided
+    engine_used: str = ""               # "llama", "openai", "deepseek", etc.
     llm_confidence: float = 0.0
     retry_count: int = 0
     error_type: Optional[str] = None
     error_detail: Optional[str] = None
-    debug_errors: List[str] = field(default_factory=list)  # All debug messages
-    validation_errors: List[str] = field(default_factory=list)  # Specific validation failures
-    generation_time_ms: float = 0.0
-    validation_time_ms: float = 0.0
-    apply_time_ms: float = 0.0
-    total_time_ms: float = 0.0
-    patterns_found: List[str] = field(default_factory=list)
-    pattern_type: str = ""
-    file_size_bytes: int = 0
-    file_line_count: int = 0
-    target_line_number: int = 0
-    learning_strategy: str = ""  # "conservative", "standard", "confident"
-    predicted_difficulty: float = 0.0
-    similar_successes_used: int = 0
+    debug_errors: list[str] = field(default_factory=list)
+    validation_errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -216,7 +209,13 @@ class PatternMemory:
     optimal_context_lines: int
     file_patterns: Dict[str, int]  # Which files this pattern works in
     last_updated: float
+    # Optional/learning fields (defaults added for backward compatibility with old JSON)
+    example_goals: list[str] = field(default_factory=list)
+    common_anchors: list[str] = field(default_factory=list)
+    optimal_context_lines: int = 3
+    file_patterns: dict[str, int] = field(default_factory=dict)
     avg_diff_size: float = 0.0
+    last_updated: float = field(default_factory=lambda: time.time())
 
 
 class EnhancedLearningSystem:

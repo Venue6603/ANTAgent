@@ -1,11 +1,11 @@
 {
-  "total_attempts": 21,
+  "total_attempts": 24,
   "successful_changes": 0,
   "failure_reasons": {
     "apply_failed": 4,
     "validation_error": 4,
     "no_diff_generated": 4,
-    "checks_failed": 9
+    "checks_failed": 12
   },
   "anchor_effectiveness": {
     "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths": 0.0,

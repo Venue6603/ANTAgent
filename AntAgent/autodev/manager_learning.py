@@ -193,7 +193,7 @@ class LearningContext:
     debug_errors: List[str] = field(default_factory=list)
     validation_errors: List[str] = field(default_factory=list)
 
-    # Newer timing fields (fixes your 'generation_time_ms' error)
+    # Timing fields
     generation_time_ms: float = 0.0
     validation_time_ms: float = 0.0
     apply_time_ms: float = 0.0
@@ -206,6 +206,9 @@ class LearningContext:
     file_line_count: int = 0
     target_line_number: int = 0
     learning_strategy: str = ""
+
+    # Newer field causing your error
+    predicted_difficulty: float = 0.0
 
 
 from dataclasses import dataclass, field  # keep if already present

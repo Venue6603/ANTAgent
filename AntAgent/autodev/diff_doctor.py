@@ -172,44 +172,45 @@ def _reject_import_inline_comment(diff_text: str) -> Tuple[bool, str]:
     return True, ""
 
 def _require_add_and_remove_each_hunk(diff_text: str) -> Tuple[bool, str]:
-    """
-    Universal rule: every hunk must include at least one '+' and at least one '-'.
-    Prevents append-only or delete-only diffs that often fail to anchor.
-    
-    EXCEPTION: Pure insertions are allowed if they have sufficient context lines
-    to anchor properly (at least 2 context lines).
-    """
+     # Allow add-only or delete-only hunks as long as they have enough context.
+    # We treat "enough context" as >= 1 line, which we already enforce elsewhere.
     lines = diff_text.splitlines()
     in_hunk = False
-    plus = minus = False
-    context_count = 0
-    saw_any = False
-    def flush() -> Tuple[bool, str]:
-        if not in_hunk:
-            return True, ""
-        # Allow pure insertions if they have sufficient context
-        if plus and not minus and context_count >= 2:
-            return True, ""
-        # Allow pure deletions if they have sufficient context  
-        if minus and not plus and context_count >= 2:
-            return True, ""
-        # Require both + and - for hunks with insufficient context
-        if not plus or not minus:
-            return False, "Each hunk must contain at least one added ('+') and one removed ('-') line, unless it has sufficient context (2+ lines)."
-        return True, ""
+    saw_plus = saw_minus = ctx = 0
+    hunks = []
+
+    def _push():
+        nonlocal saw_plus, saw_minus, ctx
+        if in_hunk:
+            hunks.append((saw_plus, saw_minus, ctx))
+        saw_plus = saw_minus = ctx = 0
+
     for ln in lines:
-        if ln.startswith("@@"):
-            ok, why = flush()
-            if not ok: return ok, why
-            in_hunk = True; saw_any = True; plus = minus = False; context_count = 0
+        if ln.startswith('@@'):
+            if in_hunk:
+                _push()
+            in_hunk = True
             continue
-        if not in_hunk: continue
-        if ln.startswith("+"): plus = True
-        elif ln.startswith("-"): minus = True
-        elif ln.startswith(" "): context_count += 1
-    ok, why = flush()
-    if not ok: return ok, why
-    if not saw_any: return False, "No @@ hunks found."
+        if not in_hunk:
+            continue
+        if ln.startswith('+'):
+            saw_plus += 1
+        elif ln.startswith('-'):
+            saw_minus += 1
+        elif ln.startswith(' '):
+            ctx += 1
+        elif ln.startswith('diff --git'):
+            break
+
+    _push()  # flush last hunk if any
+
+    for plus_ct, minus_ct, ctx_ct in hunks:
+        # Must have at least some change
+        if plus_ct == 0 and minus_ct == 0:
+            return False, "Hunk has no changes"
+        # If it's add-only or delete-only, require >= 1 context line
+        if (plus_ct == 0 or minus_ct == 0) and ctx_ct < 1:
+            return False, "Each hunk must contain '+' and '-' or include at least one context line"
     return True, ""
 
 def vet_diff(diff_text: str, min_context: int = 1) -> Tuple[bool, str]:

@@ -14,6 +14,59 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 # --- SI robustness helpers (fallback apply & intent extraction) ---
 import re as _re2
+import time as _time
+
+def _now_ts() -> float:
+    try:
+        return _time.time()
+    except Exception:
+        return 0.0
+
+# Known top-level lesson keys we keep
+_LESSON_DEFAULTS = {
+    "total_attempts": 0,
+    "successful_changes": 0,
+    "anchor_effectiveness": {},  # str -> float score
+    "example_goals": [],         # list of strings
+    "file_patterns": [],         # list of strings/regexes
+    "last_updated": 0.0,
+}
+
+def _normalize_lessons_store(data: dict) -> dict:
+    """Ensure lessons.json has required keys and no obviously-wrong types."""
+    data = dict(data or {})
+    # seed defaults
+    for k, v in _LESSON_DEFAULTS.items():
+        if k not in data:
+            data[k] = v if not isinstance(v, (dict, list)) else ({} if isinstance(v, dict) else [])
+    # coerce types gently
+    if not isinstance(data.get("anchor_effectiveness"), dict):
+        data["anchor_effectiveness"] = {}
+    if not isinstance(data.get("example_goals"), list):
+        data["example_goals"] = []
+    if not isinstance(data.get("file_patterns"), list):
+        data["file_patterns"] = []
+    if not isinstance(data.get("total_attempts"), int):
+        try:
+            data["total_attempts"] = int(data.get("total_attempts", 0))
+        except Exception:
+            data["total_attempts"] = 0
+    if not isinstance(data.get("successful_changes"), int):
+        try:
+            data["successful_changes"] = int(data.get("successful_changes", 0))
+        except Exception:
+            data["successful_changes"] = 0
+    try:
+        data["last_updated"] = float(data.get("last_updated", 0.0)) or _now_ts()
+    except Exception:
+        data["last_updated"] = _now_ts()
+    return data
+
+def _prune_kwargs(kw: dict, allowed: set) -> dict:
+    """Drop keys not accepted by the target dataclass/constructor."""
+    if not isinstance(kw, dict):
+        return {}
+    return {k: v for k, v in kw.items() if k in allowed}
 
 _SIMPLE_REPLACE_PATTERNS = [
     # “replace 'OLD' with 'NEW'”
@@ -1370,8 +1423,7 @@ def update_lessons(event: str, payload: Dict[str, Any]) -> None:
 
     _save_lessons(d)
 
-def get_lessons() -> dict:
-    return _load_lessons()
+
 
 def _iter_repo_py_files(root: Path) -> Iterable[Path]:
     for p in root.rglob("*.py"):
@@ -1504,10 +1556,25 @@ def update_lessons(event: str, payload: Dict[str, Any]) -> None:
     if g:
         d["last_10_goals"] = (d.get("last_10_goals") or [])[-9:] + [g]
 
+
+
     _save_lessons(d)
 
-def get_lessons() -> Dict[str, Any]:
-    return _load_lessons()
+def get_lessons() -> dict:
+    """
+    Load lessons.json (if present) and normalize it so later code
+    never crashes on missing/extra fields.
+    """
+    try:
+        p = _project_root() / "lessons.json"
+        if p.exists():
+            raw = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+            return _normalize_lessons_store(raw)
+    except Exception as e:
+        print(f"[WARN] get_lessons failed to load/parse: {e}")
+    # fallback
+    return _normalize_lessons_store({})
+
 
 QUOTED = re.compile(r"[\"']([^\"']{3,200})[\"']")
 DEFN   = re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")

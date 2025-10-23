@@ -1747,6 +1747,19 @@ def _llm_generate_validated_diff(
     # Failed all tries
     return last_summary, "", last_explanation, (last_err or "validator rejected all attempts")
 
+def _looks_like_unified_diff(s: str) -> bool:
+    """
+    Very light check that a string is a real unified diff: must start with 'diff --git',
+    contain at least one '@@' hunk marker, and include a '+' or '-' change line.
+    """
+    s = (s or "").strip()
+    if not s.startswith("diff --git "):
+        return False
+    if "@@" not in s:
+        return False
+    # require at least one real change line (not just headers)
+    return ("\n+" in s) or ("\n-" in s)
+
 def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
     outcome: dict = {"applied": False, "kept": False, "message": "", "results": []}
     """
@@ -1975,6 +1988,32 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             else:
                 diff = res or ""
             diff = (diff or "").replace("\r\n", "\n").strip()
+            if diff and not _looks_like_unified_diff(diff):
+                print("[DEBUG] Diff lacked change markers; requesting corrected unified diff...")
+                corrective_goal = (
+                        f"[SELF-IMPROVE] {objective}. Keep patch minimal and targeted. Do not change tests."
+                        + (f" (Hint: Similar to previous change: {similar[0]['goal'][:50]})" if similar else "")
+                        + "\n\n# RULES\n"
+                          "- Output ONLY a valid unified diff in 'git diff --no-index' format.\n"
+                          "- No prose, code fences, or extra text.\n"
+                          "- Each hunk must start with '@@' and include at least one '+' or '-' line, plus a few context lines.\n"
+                          "- Edit ONLY files within allowed paths.\n"
+                )
+                res2 = propose_patch_with_explanation(corrective_goal, constraints)
+                _s2, _d2, _e2 = "", "", ""
+                if isinstance(res2, tuple):
+                    if len(res2) == 1:
+                        _d2 = res2[0] or ""
+                    elif len(res2) == 2:
+                        _s2, _d2 = res2[0] or "", res2[1] or ""
+                    else:
+                        _s2, _d2, _e2 = res2[0] or "", res2[1] or "", res2[2] or ""
+                else:
+                    _d2 = res2 or ""
+                fixed = (_d2 or "").replace("\r\n", "\n").strip()
+                if _looks_like_unified_diff(fixed):
+                    diff = fixed
+
             if not diff:
                 # Try to recover a diff from the explanation
                 print(f"[DEBUG] No diff from primary source, trying to extract from explanation...")
@@ -2124,6 +2163,7 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                     outcome["unified_diff"] = diff
 
                 res_apply = apply_patch(diff)
+
                 if not res_apply.get("applied"):
                     print(f"[DEBUG] Apply failed with error: {res_apply.get('message', 'unknown')}")
                     print(f"[DEBUG] Apply error details: {res_apply.get('error', 'no error details')}")

@@ -1,12 +1,17 @@
 {
-  "total_attempts": 9,
+  "total_attempts": 12,
   "successful_changes": 0,
   "failure_reasons": {
     "apply_failed": 4,
     "validation_error": 4,
-    "no_diff_generated": 1
+    "no_diff_generated": 1,
+    "checks_failed": 3
   },
-  "anchor_effectiveness": {},
+  "anchor_effectiveness": {
+    "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths": 0.2290000000000001,
+    "# Random animal: Giraffe": 0.2290000000000001,
+    "from pathlib import Path as _Path": 0.2290000000000001
+  },
   "file_difficulty": {
     "AntAgent/autodev/manager.py": 1.0
   },
@@ -285,5 +290,7 @@
     }
   ],
   "anchor_phrases": [],
-  "last_10_goals": []
+  "last_10_goals": [],
+  "debug_error_patterns": [],
+  "validation_error_patterns": []
 }

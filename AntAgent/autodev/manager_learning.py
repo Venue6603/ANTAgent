@@ -216,6 +216,7 @@ class PatternMemory:
     optimal_context_lines: int
     file_patterns: Dict[str, int]  # Which files this pattern works in
     last_updated: float
+    avg_diff_size: float = 0.0
 
 
 class EnhancedLearningSystem:

@@ -2071,7 +2071,47 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
 
             try:
                 print(f"[DEBUG] Validating diff (first 500 chars):\n{diff[:500]}")
-                _validate_unified_diff(diff)
+                # --- minimal self-critique: if validator rejects, feed the error back and ask LLM to fix the diff (<=3 total tries) ---
+                for _try in range(3):
+                    try:
+                        _validate_unified_diff(diff)  # will raise if invalid
+                        break
+                    except Exception as ve:
+                        print(f"[DEBUG] Validator rejection: {ve}")
+                        # Ask the LLM to correct ONLY the diff, using the validator error as feedback
+                        corrective_goal = (
+                                f"[SELF-IMPROVE] {objective}. Keep patch minimal and targeted. Do not change tests."
+                                + (f" (Hint: Similar to previous change: {similar[0]['goal'][:50]})" if similar else "")
+                                + "\n\n# RULES\n"
+                                  "- Output ONLY a valid unified diff in 'git diff --no-index' format.\n"
+                                  "- No prose, code fences, or extra text.\n"
+                                  "- Each hunk must start with '@@' and include at least one change (+ or -), and include context lines.\n"
+                                  "- Edit ONLY files within allowed paths.\n"
+                                + "\n# VALIDATOR_FEEDBACK\n"
+                                + f"{ve}\n"
+                        )
+                        res2 = propose_patch_with_explanation(corrective_goal, constraints)
+
+                        # Unpack result exactly like the original code
+                        _summary2, _diff2, _ex2 = "", "", ""
+                        if isinstance(res2, tuple):
+                            if len(res2) == 1:
+                                _diff2 = res2[0] or ""
+                            elif len(res2) == 2:
+                                _summary2, _diff2 = res2[0] or "", res2[1] or ""
+                            else:
+                                _summary2, _diff2, _ex2 = res2[0] or "", res2[1] or "", res2[2] or ""
+                        else:
+                            _diff2 = res2 or ""
+
+                        new_diff = (_diff2 or "").replace("\r\n", "\n").strip()
+                        if not new_diff:
+                            # if the model gave nothing, rethrow the validator error to fall into existing failure path
+                            raise
+                        diff = new_diff  # use corrected diff and loop back to validate
+                else:
+                    # If the loop ended without a successful break (shouldn't happen), validate to raise and hit existing error flow
+                    _validate_unified_diff(diff)
                 paths = _all_targets_allowed(diff)
                 print(f"[DEBUG] Extracted paths from diff: {paths}")
                 outcome["paths"] = paths

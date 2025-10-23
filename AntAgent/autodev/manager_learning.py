@@ -1905,20 +1905,88 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
             except Exception:
                 pass
 
-                # --- Ask LLM for a validator-clean diff (self-critique loop; no prompt-specific logic) ---
-                try:
-                    enhanced_goal = f"[SELF-IMPROVE] {objective}. Keep patch minimal and targeted. Do not change tests."
-                    if similar:
-                        enhanced_goal += f" (Hint: Similar to previous change: {similar[0]['goal'][:50]})"
 
-                    summary, diff, explanation, val_err = _llm_generate_validated_diff(
-                        propose_fn=propose_patch_with_explanation,
-                        enhanced_goal=enhanced_goal,
-                        constraints=constraints,
-                        validate_fn=_validate_unified_diff,
-                        max_tries=3
-                    )
-                except Exception as e:
+
+            # --- Generate the proposed diff with enhanced prompting ---
+            try:
+                # Add learning hints to the goal
+                enhanced_goal = f"[SELF-IMPROVE] {objective}. Keep patch minimal and targeted. Do not change tests."
+
+                if similar:
+                    hint = f" (Hint: Similar to previous change: {similar[0]['goal'][:50]})"
+                    enhanced_goal += hint
+
+                res = propose_patch_with_explanation(enhanced_goal, constraints)
+
+
+
+
+
+
+            except Exception as e:
+                from .manager import _debug_collector
+                learning_ctx = LearningContext(
+                    timestamp=time.time(),
+                    goal=objective,
+                    file_path=target_paths[0] if target_paths else "",
+                    success=False,
+                    diff_size=0,
+                    diff_content="",
+                    context_lines_used=constraints["require_context_lines"],
+                    anchors_used=constraints.get("must_anchor_any", [])[:10],
+                    retry_count=i - 1,
+                    llm_confidence=0.0,
+                    llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                    engine_used=_debug_collector.get("engine_used", "unknown"),
+                    error_type="generation_failed",
+                    error_detail=str(e),
+                )
+                learning.learn_from_attempt(learning_ctx)
+
+                outcome = {
+                    "round": i,
+                    "summary": None,
+                    "explanation": f"Generation failed: {e}",
+                    "unified_diff": None,
+                    "diff_truncated": False,
+                    "applied": False,
+                    "kept": False,
+                    "message": f"Generation error: {e}",
+                    "paths": [],
+                    "checks_log": None,
+                }
+                results.append(outcome)
+                continue
+
+            # Extract the three parts: summary, diff, explanation
+            summary: str = ""
+            explanation: str = ""
+            diff: str = ""
+            if isinstance(res, tuple):
+                if len(res) == 1:
+                    diff = res[0] or ""
+                elif len(res) == 2:
+                    summary = res[0] or ""
+                    diff = res[1] or ""
+                elif len(res) >= 3:
+                    summary = res[0] or ""
+                    diff = res[1] or ""
+                    explanation = res[2] or ""
+            else:
+                diff = res or ""
+            diff = (diff or "").replace("\r\n", "\n").strip()
+            if not diff:
+                # Try to recover a diff from the explanation
+                print(f"[DEBUG] No diff from primary source, trying to extract from explanation...")
+                diff = _extract_unified_diff_from_text(explanation or "") or ""
+                if diff:
+                    print(f"[DEBUG] Recovered diff from explanation: {len(diff)} bytes")
+
+            if not diff:
+                print(f"[DEBUG] No diff produced. Summary: {summary[:100] if summary else 'none'}")
+                print(f"[DEBUG] Explanation: {explanation[:200] if explanation else 'none'}")
+
+                if learning_ctx is None:
                     from .manager import _debug_collector
                     learning_ctx = LearningContext(
                         timestamp=time.time(),
@@ -1933,74 +2001,75 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                         llm_confidence=0.0,
                         llm_explanation=_debug_collector.get("llm_explanation", "none"),
                         engine_used=_debug_collector.get("engine_used", "unknown"),
-                        error_type="generation_failed",
-                        error_detail=str(e),
                     )
-                    learning.learn_from_attempt(learning_ctx)
 
-                    results.append({
-                        "round": i, "summary": None, "explanation": f"Generation failed: {e}",
-                        "unified_diff": None, "diff_truncated": False, "applied": False, "kept": False,
-                        "message": f"Generation error: {e}", "paths": [], "checks_log": None,
-                    })
-                    continue
+                learning_ctx.error_type = "no_diff_generated"
+                learning_ctx.error_detail = "Model produced no diff"
+                learning.learn_from_attempt(learning_ctx)
+                recorded = True
 
-                # If we couldn't get a valid diff after critique attempts, record and move on
-                if not diff:
-                    if learning_ctx is None:
-                        from .manager import _debug_collector
-                        learning_ctx = LearningContext(
-                            timestamp=time.time(),
-                            goal=objective,
-                            file_path=target_paths[0] if target_paths else "",
-                            success=False,
-                            diff_size=0,
-                            diff_content="",
-                            context_lines_used=constraints["require_context_lines"],
-                            anchors_used=constraints.get("must_anchor_any", [])[:10],
-                            retry_count=i - 1,
-                            llm_confidence=0.0,
-                            llm_explanation=_debug_collector.get("llm_explanation", "none"),
-                            engine_used=_debug_collector.get("engine_used", "unknown"),
-                        )
-                    learning_ctx.error_type = "validator_rejected"
-                    learning_ctx.error_detail = val_err or "unknown"
-                    learning.learn_from_attempt(learning_ctx)
+                outcome = {"applied": False, "kept": False, "message": "no diff produced by model", "results": []}
+                results.append(outcome)
+                continue
 
-                    results.append(
-                        {"applied": False, "kept": False, "message": f"validator rejected: {val_err}", "results": []})
-                    continue
+            # Ensure learning_ctx exists, then update with diff info
+            from .manager import _debug_collector  # filled by propose_patch_with_explanation
+            if learning_ctx is None:
+                learning_ctx = LearningContext(
+                    timestamp=time.time(),
+                    goal=objective,
+                    file_path=target_paths[0] if target_paths else "",
+                    success=False,
+                    diff_size=len(diff or ""),
+                    diff_content=diff or "",
+                    context_lines_used=constraints["require_context_lines"],
+                    anchors_used=constraints.get("must_anchor_any", [])[:10],
+                    retry_count=i - 1,
+                    llm_confidence=0.0,
+                    llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                    engine_used=_debug_collector.get("engine_used", "unknown"),
+                )
+            else:
+                learning_ctx.diff_size = len(diff or "")
+                learning_ctx.diff_content = diff or ""
+                learning_ctx.context_lines_used = constraints["require_context_lines"]
+                learning_ctx.anchors_used = constraints.get("must_anchor_any", [])[:10]
+                learning_ctx.retry_count = i - 1
+                # update metadata from collector if available
+                try:
+                    learning_ctx.llm_explanation = _debug_collector.get("llm_explanation", learning_ctx.llm_explanation)
+                    learning_ctx.engine_used = _debug_collector.get("engine_used", learning_ctx.engine_used)
+                except Exception:
+                    pass
 
-                # Ensure learning_ctx exists and update it with diff info
-                from .manager import _debug_collector
-                if learning_ctx is None:
-                    learning_ctx = LearningContext(
-                        timestamp=time.time(),
-                        goal=objective,
-                        file_path=target_paths[0] if target_paths else "",
-                        success=False,
-                        diff_size=len(diff or ""),
-                        diff_content=diff or "",
-                        context_lines_used=constraints["require_context_lines"],
-                        anchors_used=constraints.get("must_anchor_any", [])[:10],
-                        retry_count=i - 1,
-                        llm_confidence=0.0,
-                        llm_explanation=_debug_collector.get("llm_explanation", "none"),
-                        engine_used=_debug_collector.get("engine_used", "unknown"),
-                    )
-                else:
-                    learning_ctx.diff_size = len(diff or "")
-                    learning_ctx.diff_content = diff or ""
-                    learning_ctx.context_lines_used = constraints["require_context_lines"]
-                    learning_ctx.anchors_used = constraints.get("must_anchor_any", [])[:10]
-                    learning_ctx.retry_count = i - 1
-                    try:
-                        learning_ctx.llm_explanation = _debug_collector.get("llm_explanation", learning_ctx.llm_explanation)
-                        learning_ctx.engine_used = _debug_collector.get("engine_used", learning_ctx.engine_used)
-                    except Exception:
-                        pass
+            if explanation:
+                # Simple confidence heuristic based on explanation clarity
+                learning_ctx.llm_confidence = 0.7 if "line" in explanation.lower() else 0.3
 
-                # Apply the LLM-produced, validator-clean diff
+            outcome = {
+                "round": i,
+                "summary": (summary[:240] + "…") if summary and len(summary) > 241 else summary or None,
+                "explanation": explanation or None,
+                "unified_diff": None,
+                "diff_truncated": False,
+                "applied": False,
+                "kept": False,
+                "message": "",
+                "paths": [],
+                "checks_log": None,
+            }
+
+            if not diff:
+                learning_ctx.error_type = "empty_diff"
+                learning_ctx.error_detail = "No diff generated"
+                learning.learn_from_attempt(learning_ctx)
+
+                outcome["message"] = "No diff produced"
+                results.append(outcome)
+                print("[LEARNING] No diff generated, will adjust strategy...")
+                continue
+
+            try:
                 print(f"[DEBUG] Validating diff (first 500 chars):\n{diff[:500]}")
                 _validate_unified_diff(diff)
                 paths = _all_targets_allowed(diff)
@@ -2020,28 +2089,67 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                     print(f"[DEBUG] Apply error details: {res_apply.get('error', 'no error details')}")
                     outcome["message"] = f"apply failed: {res_apply.get('message', res_apply.get('error', 'unknown'))}"
 
+                    # Learn from apply failure (still record so lessons/failure_patterns are updated)
                     learning_ctx.error_type = "apply_failed"
                     learning_ctx.error_detail = res_apply.get('message', 'unknown')
                     learning.learn_from_attempt(learning_ctx)
 
-                    if "hunk" in (outcome["message"] or "").lower():
-                        update_lessons("bad_hunk", {
-                            "goal": objective,
-                            "file_path": paths[0] if paths else None,
-                            "context_lines": constraints["require_context_lines"]
-                        })
-                    elif "not found" in (outcome["message"] or "").lower():
-                        update_lessons("anchor_not_found", {
-                            "goal": objective,
-                            "anchors": constraints.get("must_anchor_any", [])
-                        })
+                    # --- Fallback: try a safe in-place replacement parsed from the objective ---
+                    try_goal = objective or ""
+                    old_txt, new_txt = _extract_simple_replace_from_goal(try_goal)
+                    target_file = (paths or target_paths or constraints.get("paths") or [""])[0] if (
+                                paths or target_paths or constraints.get("paths")) else ""
+                    fallback_used = False
+                    fallback_ok = False
+                    fallback_detail = None
 
-                    results.append(outcome)
-                    print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
-                    continue
+                    if old_txt and new_txt and target_file:
+                        fallback_used = True
+                        fb = _safe_inplace_edit(target_file, old_txt, new_txt, max_replacements=1)
+                        fallback_ok = bool(fb.get("applied"))
+                        fallback_detail = fb.get("error") or f"replaced={fb.get('replaced', 0)}"
+
+                        # Verify end-state to be sure
+                        if fallback_ok and not _verify_file_contains(target_file, new_txt):
+                            fallback_ok = False
+                            fallback_detail = "post-apply verification failed"
+
+                        # If fallback worked, commit just that file and record success
+                        if fallback_ok:
+                            _git_commit_paths([target_file], f"self-improve(fallback): {objective} (round {i})")
+                            outcome["applied"] = True
+                            outcome["kept"] = True
+                            outcome["message"] = "fallback in-place edit applied"
+
+                            learning_ctx.success = True
+                            try:
+                                learning_ctx.debug_errors.append("fallback_inplace_edit_used")
+                            except Exception:
+                                pass
+                            learning.learn_from_attempt(learning_ctx)
+                            results.append(outcome)
+                            break  # stop attempts
+
+                    # Enhanced failure learning (only if still failed)
+                    if not fallback_ok:
+                        if "hunk" in (outcome["message"] or "").lower():
+                            update_lessons("bad_hunk", {
+                                "goal": objective,
+                                "file_path": paths[0] if paths else None,
+                                "context_lines": constraints["require_context_lines"]
+                            })
+                        elif "not found" in (outcome["message"] or "").lower():
+                            update_lessons("anchor_not_found", {
+                                "goal": objective,
+                                "anchors": constraints.get("must_anchor_any", [])
+                            })
+
+                        results.append(outcome)
+                        print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
+                        continue
 
                 ok, check_msg = _smoke_checks()
-
+                
                 outcome["checks_log"] = check_msg
 
                 if ok:

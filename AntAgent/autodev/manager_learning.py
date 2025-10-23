@@ -1717,6 +1717,11 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
 
                 res = propose_patch_with_explanation(enhanced_goal, constraints)
 
+
+
+
+
+
             except Exception as e:
                 from .manager import _debug_collector
                 learning_ctx = LearningContext(
@@ -1806,25 +1811,35 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                 results.append(outcome)
                 continue
 
-
-            # Update learning context with diff info
-            learning_ctx.diff_size = len(diff)
-
+            # Ensure learning_ctx exists, then update with diff info
             from .manager import _debug_collector  # filled by propose_patch_with_explanation
-            learning_ctx = LearningContext(
-                timestamp=time.time(),
-                goal=objective,
-                file_path=target_paths[0] if target_paths else "",
-                success=False,
-                diff_size=len(diff or ""),
-                diff_content=diff or "",
-                context_lines_used=constraints["require_context_lines"],
-                anchors_used=constraints.get("must_anchor_any", [])[:10],
-                retry_count=i - 1,
-                llm_confidence=0.0,
-                llm_explanation=_debug_collector.get("llm_explanation", "none"),
-                engine_used=_debug_collector.get("engine_used", "unknown"),
-            )
+            if learning_ctx is None:
+                learning_ctx = LearningContext(
+                    timestamp=time.time(),
+                    goal=objective,
+                    file_path=target_paths[0] if target_paths else "",
+                    success=False,
+                    diff_size=len(diff or ""),
+                    diff_content=diff or "",
+                    context_lines_used=constraints["require_context_lines"],
+                    anchors_used=constraints.get("must_anchor_any", [])[:10],
+                    retry_count=i - 1,
+                    llm_confidence=0.0,
+                    llm_explanation=_debug_collector.get("llm_explanation", "none"),
+                    engine_used=_debug_collector.get("engine_used", "unknown"),
+                )
+            else:
+                learning_ctx.diff_size = len(diff or "")
+                learning_ctx.diff_content = diff or ""
+                learning_ctx.context_lines_used = constraints["require_context_lines"]
+                learning_ctx.anchors_used = constraints.get("must_anchor_any", [])[:10]
+                learning_ctx.retry_count = i - 1
+                # update metadata from collector if available
+                try:
+                    learning_ctx.llm_explanation = _debug_collector.get("llm_explanation", learning_ctx.llm_explanation)
+                    learning_ctx.engine_used = _debug_collector.get("engine_used", learning_ctx.engine_used)
+                except Exception:
+                    pass
 
             if explanation:
                 # Simple confidence heuristic based on explanation clarity

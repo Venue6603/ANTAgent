@@ -12,7 +12,60 @@ from typing import Any, Dict, List, Optional, Iterable, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 from datetime import datetime, timedelta
+# --- SI robustness helpers (fallback apply & intent extraction) ---
+import re as _re2
 
+_SIMPLE_REPLACE_PATTERNS = [
+    # “replace 'OLD' with 'NEW'”
+    _re2.compile(r"replace\s+(['\"])(?P<old>.+?)\1\s+with\s+(['\"])(?P<new>.+?)\3", _re2.IGNORECASE),
+    # “change 'OLD' to 'NEW'”
+    _re2.compile(r"change\s+(['\"])(?P<old>.+?)\1\s+to\s+(['\"])(?P<new>.+?)\3", _re2.IGNORECASE),
+    # loose form you have in logs: replace # Random animal: Giraffe with ...
+    _re2.compile(r"replace\s+(?P<old>\#.*?)(?:\s+|$)with\s+(?P<new>.+)$", _re2.IGNORECASE),
+]
+
+def _extract_simple_replace_from_goal(goal: str):
+    """Parse a simple 'replace OLD with NEW' instruction from the goal text."""
+    if not goal:
+        return (None, None)
+    for rx in _SIMPLE_REPLACE_PATTERNS:
+        m = rx.search(goal)
+        if m:
+            gd = m.groupdict()
+            old = (gd.get("old") or "").strip().strip("'\"")
+            new = (gd.get("new") or "").strip().strip("'\"")
+            if old and new:
+                return (old, new)
+    return (None, None)
+
+def _safe_inplace_edit(file_path: str, old_snippet: str, new_snippet: str, *, max_replacements: int = 1) -> dict:
+    """
+    Fallback: directly edit the target file by replacing OLD with NEW up to 'max_replacements' times.
+    Returns a dict: {applied: bool, replaced: int, error?: str}
+    """
+    try:
+        p = Path(file_path)
+        if not p.exists():
+            return {"applied": False, "replaced": 0, "error": f"file not found: {file_path}"}
+        text = p.read_text(encoding="utf-8", errors="replace")
+        if old_snippet not in text:
+            return {"applied": False, "replaced": 0, "error": "old snippet not found in file"}
+        if max_replacements > 0:
+            new_text = text.replace(old_snippet, new_snippet, max_replacements)
+            replaced = min(text.count(old_snippet), max_replacements)
+        else:
+            new_text = text.replace(old_snippet, new_snippet)
+            replaced = text.count(old_snippet)
+        p.write_text(new_text, encoding="utf-8")
+        return {"applied": True, "replaced": replaced}
+    except Exception as e:
+        return {"applied": False, "replaced": 0, "error": str(e)}
+
+def _verify_file_contains(file_path: str, needle: str) -> bool:
+    try:
+        return needle in Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
 # Enhanced storage paths
 LOG_DIR = Path(".antagent")
 LOG_DIR.mkdir(exist_ok=True)
@@ -42,6 +95,69 @@ DEFAULT = {
     "anchor_phrases": [],   # stable snippets to anchor on next runs
     "last_10_goals": [],
 }
+
+# --- SI robustness helpers (fallback apply & intent extraction) ---
+
+import io
+import re
+from dataclasses import asdict
+
+_SIMPLE_REPLACE_PATTERNS = [
+    # english phrasing variants
+    re.compile(r"replace\s+(['\"])(?P<old>.+?)\1\s+with\s+(['\"])(?P<new>.+?)\3", re.IGNORECASE),
+    re.compile(r"change\s+(['\"])(?P<old>.+?)\1\s+to\s+(['\"])(?P<new>.+?)\3", re.IGNORECASE),
+    # compact form found in your logs like: replace '# Random animal: Giraffe' with another comment ...
+    re.compile(r"replace\s+(?P<old>\#.*?)(?:\s+|$)with\s+(?P<new>.+)$", re.IGNORECASE),
+]
+
+def _extract_simple_replace_from_goal(goal: str) -> tuple[str | None, str | None]:
+    """Try to parse a simple 'replace OLD with NEW' instruction from the goal text."""
+    if not goal:
+        return None, None
+    for rx in _SIMPLE_REPLACE_PATTERNS:
+        m = rx.search(goal)
+        if m:
+            old = m.groupdict().get("old")
+            new = m.groupdict().get("new")
+            if old and new:
+                # strip surrounding quotes if present
+                old = old.strip()
+                new = new.strip()
+                if (old.startswith(("'", '"')) and old.endswith(("'", '"'))) or (new.startswith(("'", '"')) and new.endswith(("'", '"'))):
+                    old = old.strip("'\"")
+                    new = new.strip("'\"")
+                return old, new
+    return None, None
+
+def _safe_inplace_edit(file_path: str, old_snippet: str, new_snippet: str, *, max_replacements: int = 1) -> dict:
+    """
+    Fallback: directly edit the target file by replacing OLD with NEW up to 'max_replacements' times.
+    Returns a dict with {applied: bool, replaced: int, error?: str}
+    """
+    try:
+        p = Path(file_path)
+        if not p.exists():
+            return {"applied": False, "replaced": 0, "error": f"file not found: {file_path}"}
+        text = p.read_text(encoding="utf-8")
+        replaced = text.count(old_snippet)
+        if replaced == 0:
+            return {"applied": False, "replaced": 0, "error": "old snippet not found in file"}
+        if max_replacements > 0:
+            text = text.replace(old_snippet, new_snippet, max_replacements)
+            replaced = min(replaced, max_replacements)
+        else:
+            text = text.replace(old_snippet, new_snippet)
+        p.write_text(text, encoding="utf-8")
+        return {"applied": True, "replaced": replaced}
+    except Exception as e:
+        return {"applied": False, "replaced": 0, "error": str(e)}
+
+def _verify_file_contains(file_path: str, needle: str) -> bool:
+    try:
+        return needle in Path(file_path).read_text(encoding="utf-8")
+    except Exception:
+        return False
+
 
 def _extract_unified_diff_from_text(text: str) -> str | None:
     """
@@ -1913,28 +2029,64 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                     print(f"[DEBUG] Apply error details: {res_apply.get('error', 'no error details')}")
                     outcome["message"] = f"apply failed: {res_apply.get('message', res_apply.get('error', 'unknown'))}"
 
-
-                    # Learn from apply failure
+                    # Learn from apply failure (still record so lessons/failure_patterns are updated)
                     learning_ctx.error_type = "apply_failed"
                     learning_ctx.error_detail = res_apply.get('message', 'unknown')
                     learning.learn_from_attempt(learning_ctx)
 
-                    # Enhanced failure learning
-                    if "hunk" in outcome["message"].lower():
-                        update_lessons("bad_hunk", {
-                            "goal": objective,
-                            "file_path": paths[0] if paths else None,
-                            "context_lines": constraints["require_context_lines"]
-                        })
-                    elif "not found" in outcome["message"].lower():
-                        update_lessons("anchor_not_found", {
-                            "goal": objective,
-                            "anchors": constraints.get("must_anchor_any", [])
-                        })
+                    # --- Fallback: try a safe in-place replacement parsed from the objective ---
+                    try_goal = objective or ""
+                    old_txt, new_txt = _extract_simple_replace_from_goal(try_goal)
+                    target_file = (paths or target_paths or constraints.get("paths") or [""])[0] if (
+                                paths or target_paths or constraints.get("paths")) else ""
+                    fallback_used = False
+                    fallback_ok = False
+                    fallback_detail = None
 
-                    results.append(outcome)
-                    print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
-                    continue
+                    if old_txt and new_txt and target_file:
+                        fallback_used = True
+                        fb = _safe_inplace_edit(target_file, old_txt, new_txt, max_replacements=1)
+                        fallback_ok = bool(fb.get("applied"))
+                        fallback_detail = fb.get("error") or f"replaced={fb.get('replaced', 0)}"
+
+                        # Verify end-state to be sure
+                        if fallback_ok and not _verify_file_contains(target_file, new_txt):
+                            fallback_ok = False
+                            fallback_detail = "post-apply verification failed"
+
+                        # If fallback worked, commit just that file and record success
+                        if fallback_ok:
+                            _git_commit_paths([target_file], f"self-improve(fallback): {objective} (round {i})")
+                            outcome["applied"] = True
+                            outcome["kept"] = True
+                            outcome["message"] = "fallback in-place edit applied"
+
+                            learning_ctx.success = True
+                            try:
+                                learning_ctx.debug_errors.append("fallback_inplace_edit_used")
+                            except Exception:
+                                pass
+                            learning.learn_from_attempt(learning_ctx)
+                            results.append(outcome)
+                            break  # stop attempts
+
+                    # Enhanced failure learning (only if still failed)
+                    if not fallback_ok:
+                        if "hunk" in (outcome["message"] or "").lower():
+                            update_lessons("bad_hunk", {
+                                "goal": objective,
+                                "file_path": paths[0] if paths else None,
+                                "context_lines": constraints["require_context_lines"]
+                            })
+                        elif "not found" in (outcome["message"] or "").lower():
+                            update_lessons("anchor_not_found", {
+                                "goal": objective,
+                                "anchors": constraints.get("must_anchor_any", [])
+                            })
+
+                        results.append(outcome)
+                        print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
+                        continue
 
                 ok, check_msg = _smoke_checks()
                 outcome["checks_log"] = check_msg

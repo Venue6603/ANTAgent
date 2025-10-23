@@ -1,10 +1,10 @@
 {
-  "total_attempts": 38,
+  "total_attempts": 43,
   "successful_changes": 0,
   "failure_reasons": {
-    "apply_failed": 5,
-    "validation_error": 7,
-    "no_diff_generated": 5,
+    "apply_failed": 6,
+    "validation_error": 10,
+    "no_diff_generated": 6,
     "checks_failed": 21
   },
   "anchor_effectiveness": {
@@ -126,6 +126,31 @@
       "error_type": "checks_failed",
       "error_detail": "compileall rc=3221225786 Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\compileall.py\", line 462, in <module>\n    exit_status = int(not main())\n                          ^^^^^^\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\compileall.py\", line 310, in main\n    import argparse\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\argparse.py\", line 94, in <module>\n    from gettext import gettext as _, ngettext\n  File \"<frozen importlib._bootstrap>\", line 1176, in _find_and_load\n  File \"<frozen importlib._bootstrap>\", line 1147, in _find_and_load_unlocked\n  File \"<frozen importlib._bootstrap>\", line 690, in _load_unlocked\n  File \"<frozen importlib._bootstrap_external>\", line 936, in exec_module\n  File \"<frozen importlib._bootstrap_external>\", line 1026, in get_code\n  File \"<frozen importlib._bootstrap_external>\", line 1148, in path_stats\n  File \"<frozen importlib._bootstrap_external>\", line 147, in _path_stat\nKeyboardInterrupt | import AntAgent.app rc=1 Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\James\\PycharmProjects\\ANTAgent\\AntAgent\\app.py\", line 11, in <module>\n    from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile\nModuleNotFoundError: No module named 'fastapi'",
       "timestamp": 1761203404.7454379
+    },
+    {
+      "error_type": "no_diff_generated",
+      "error_detail": "Model produced no diff",
+      "timestamp": 1761203572.2405632
+    },
+    {
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "timestamp": 1761203607.179369
+    },
+    {
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "timestamp": 1761203607.179369
+    },
+    {
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "timestamp": 1761203607.179369
+    },
+    {
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "timestamp": 1761203607.179369
     }
   ],
   "detailed_attempts": [
@@ -698,6 +723,146 @@
       "llm_explanation": "none",
       "error_type": "checks_failed",
       "error_detail": "compileall rc=3221225786 Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\compileall.py\", line 462, in <module>\n    exit_status = int(not main())\n                          ^^^^^^\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\compileall.py\", line 310, in main\n    import argparse\n  File \"C:\\Users\\James\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\argparse.py\", line 94, in <module>\n    from gettext import gettext as _, ngettext\n  File \"<frozen importlib._bootstrap>\", line 1176, in _find_and_load\n  File \"<frozen importlib._bootstrap>\", line 1147, in _find_and_load_unlocked\n  File \"<frozen importlib._bootstrap>\", line 690, in _load_unlocked\n  File \"<frozen importlib._bootstrap_external>\", line 936, in exec_module\n  File \"<frozen importlib._bootstrap_external>\", line 1026, in get_code\n  File \"<frozen importlib._bootstrap_external>\", line 1148, in path_stats\n  File \"<frozen importlib._bootstrap_external>\", line 147, in _path_stat\nKeyboardInterrupt | import AntAgent.app rc=1 Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\James\\PycharmProjects\\ANTAgent\\AntAgent\\app.py\", line 11, in <module>\n    from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile\nModuleNotFoundError: No module named 'fastapi'",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761203572.2405632,
+      "goal": "In manager.py, replace '# Random animal: Giraffe' with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "unknown",
+      "llm_explanation": "No explanation available",
+      "error_type": "no_diff_generated",
+      "error_detail": "Model produced no diff",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761203607.179369,
+      "goal": "In manager.py, replace '# Random animal: Giraffe' with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "openai",
+      "llm_explanation": "Generated via OpenAI",
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761203607.179369,
+      "goal": "In manager.py, replace '# Random animal: Giraffe' with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "openai",
+      "llm_explanation": "Generated via OpenAI",
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761203607.179369,
+      "goal": "In manager.py, replace '# Random animal: Giraffe' with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "openai",
+      "llm_explanation": "Generated via OpenAI",
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761203607.179369,
+      "goal": "In manager.py, replace '# Random animal: Giraffe' with another comment with a different random animal.",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "openai",
+      "llm_explanation": "Generated via OpenAI",
+      "error_type": "validation_error",
+      "error_detail": "'counters'",
       "debug_errors": [],
       "validation_errors": [],
       "performance": {

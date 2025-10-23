@@ -2129,64 +2129,107 @@ def auto_self_improve(objective: str, *, rounds: int = 1) -> Dict:
                     print(f"[DEBUG] Apply error details: {res_apply.get('error', 'no error details')}")
                     outcome["message"] = f"apply failed: {res_apply.get('message', res_apply.get('error', 'unknown'))}"
 
-                    # Learn from apply failure (still record so lessons/failure_patterns are updated)
+                    # Record the failure so lessons/failure_patterns get updated
                     learning_ctx.error_type = "apply_failed"
                     learning_ctx.error_detail = res_apply.get('message', 'unknown')
                     learning.learn_from_attempt(learning_ctx)
 
-                    # --- Fallback: try a safe in-place replacement parsed from the objective ---
-                    try_goal = objective or ""
-                    old_txt, new_txt = _extract_simple_replace_from_goal(try_goal)
-                    target_file = (paths or target_paths or constraints.get("paths") or [""])[0] if (
-                                paths or target_paths or constraints.get("paths")) else ""
-                    fallback_used = False
-                    fallback_ok = False
-                    fallback_detail = None
-
-                    if old_txt and new_txt and target_file:
-                        fallback_used = True
-                        fb = _safe_inplace_edit(target_file, old_txt, new_txt, max_replacements=1)
-                        fallback_ok = bool(fb.get("applied"))
-                        fallback_detail = fb.get("error") or f"replaced={fb.get('replaced', 0)}"
-
-                        # Verify end-state to be sure
-                        if fallback_ok and not _verify_file_contains(target_file, new_txt):
-                            fallback_ok = False
-                            fallback_detail = "post-apply verification failed"
-
-                        # If fallback worked, commit just that file and record success
-                        if fallback_ok:
-                            _git_commit_paths([target_file], f"self-improve(fallback): {objective} (round {i})")
-                            outcome["applied"] = True
-                            outcome["kept"] = True
-                            outcome["message"] = "fallback in-place edit applied"
-
-                            learning_ctx.success = True
+                    # ---------- ONE LLM RETRY WITH EXACT LOCAL CONTEXT (very small change) ----------
+                    try:
+                        # Pick the most likely target file (what validator extracted or first allowed)
+                        target_file = (paths or target_paths or constraints.get("paths") or [""])[0] if (
+                                    paths or target_paths or constraints.get("paths")) else ""
+                        context_snip = ""
+                        if target_file:
                             try:
-                                learning_ctx.debug_errors.append("fallback_inplace_edit_used")
-                            except Exception:
-                                pass
-                            learning.learn_from_attempt(learning_ctx)
+                                txt = Path(target_file).read_text(encoding="utf-8", errors="replace").splitlines()
+                                # choose an anchor from constraints or fall back to something simple
+                                anchors = constraints.get("must_anchor_any", [])
+                                anchor = next((a for a in anchors if isinstance(a, str) and a.strip()), None)
+                                # if no anchor, try a cheap cue from the objective (quoted strings)
+                                if not anchor:
+                                    import re as _reanchor
+                                    m = _reanchor.search(r"(['\"])(.+?)\1", objective)
+                                    anchor = m.group(2) if m else None
+
+                                # find the best matching line for the anchor
+                                line_idx = 0
+                                if anchor:
+                                    lowered = anchor.strip().lower()
+                                    for j, line in enumerate(txt):
+                                        if lowered in line.lower():
+                                            line_idx = j
+                                            break
+                                # extract a small, exact window around the anchor (or file start)
+                                lo = max(0, line_idx - 8)
+                                hi = min(len(txt), line_idx + 8)
+                                window = txt[lo:hi]
+                                # present with line numbers to discourage the model from inventing context
+                                context_snip = "\n".join(f"{lo + k + 1:>6}: {line}" for k, line in enumerate(window))
+                            except Exception as _e:
+                                print(f"[DEBUG] Could not build context window: {_e}")
+
+                        corrective_goal = (
+                            f"[SELF-IMPROVE] {objective}\n"
+                            "Your previous diff could not be applied because patch context did not match.\n"
+                            "Use the EXACT code context below to anchor your hunk(s).\n"
+                            "\n# CONTEXT (line-numbered, do NOT edit these lines; just use them as reference)\n"
+                            f"{context_snip if context_snip else '(no local snippet available)'}\n"
+                            "\n# INSTRUCTIONS\n"
+                            "- Output ONLY a valid unified diff in 'git diff --no-index' format.\n"
+                            "- No prose, no code fences, no explanations.\n"
+                            "- Include '@@' hunks with real surrounding lines copied exactly from the context.\n"
+                            "- Edit ONLY files within the allowed paths.\n"
+                            "- Keep changes minimal and targeted; do not move unrelated lines.\n"
+                        )
+
+                        res2 = propose_patch_with_explanation(corrective_goal, {**constraints, "paths": [
+                            target_file] if target_file else constraints.get("paths", [])})
+                        # Unpack exactly like existing code
+                        _sum2, _diff2, _exp2 = "", "", ""
+                        if isinstance(res2, tuple):
+                            if len(res2) == 1:
+                                _diff2 = res2[0] or ""
+                            elif len(res2) == 2:
+                                _sum2, _diff2 = res2[0] or "", res2[1] or ""
+                            else:
+                                _sum2, _diff2, _exp2 = res2[0] or "", res2[1] or "", res2[2] or ""
+                        else:
+                            _diff2 = res2 or ""
+                        _diff2 = (_diff2 or "").replace("\r\n", "\n").strip()
+
+                        if _diff2:
+                            print(f"[DEBUG] Retrying with context-aware diff (first 500 chars):\n{_diff2[:500]}")
+                            _validate_unified_diff(_diff2)
+                            paths2 = _all_targets_allowed(_diff2)
+                            res_apply2 = apply_patch(_diff2)
+                            if res_apply2.get("applied"):
+                                # adopt improved result
+                                diff = _diff2
+                                outcome["paths"] = paths2
+                                learning_ctx.file_path = paths2[0] if paths2 else learning_ctx.file_path
+                                outcome["unified_diff"] = _diff2 if len(_diff2) <= DIFF_RETURN_LIMIT else _diff2[
+                                                                                                              :DIFF_RETURN_LIMIT] + "\n# …(truncated)…"
+                                print("[DEBUG] Context-aware retry applied successfully.")
+                            else:
+                                print(
+                                    f"[DEBUG] Context-aware retry still failed: {res_apply2.get('message', 'unknown')}")
+                                # keep original failure outcome
+                                results.append(outcome)
+                                print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
+                                continue
+                        else:
+                            # No new diff from retry; keep original failure outcome
                             results.append(outcome)
-                            break  # stop attempts
+                            print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
+                            continue
 
-                    # Enhanced failure learning (only if still failed)
-                    if not fallback_ok:
-                        if "hunk" in (outcome["message"] or "").lower():
-                            update_lessons("bad_hunk", {
-                                "goal": objective,
-                                "file_path": paths[0] if paths else None,
-                                "context_lines": constraints["require_context_lines"]
-                            })
-                        elif "not found" in (outcome["message"] or "").lower():
-                            update_lessons("anchor_not_found", {
-                                "goal": objective,
-                                "anchors": constraints.get("must_anchor_any", [])
-                            })
-
+                    except Exception as _re:
+                        print(f"[DEBUG] Context-aware retry error: {_re}")
                         results.append(outcome)
                         print(f"[LEARNING] Apply failed: {outcome['message'][:60]}")
                         continue
+                    # ---------- end minimal retry ----------
 
                 ok, check_msg = _smoke_checks()
                 

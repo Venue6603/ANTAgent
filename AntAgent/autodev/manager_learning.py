@@ -18,6 +18,50 @@ import time as _time
 
 import importlib, traceback
 
+from pathlib import Path
+
+# Folders we never want the LLM to scan/patch (venvs, caches, VCS, etc.)
+_IGNORED_DIR_NAMES = {
+    ".venv", ".venv311", "venv", "env", "__pycache__", ".git", ".idea",
+    ".pytest_cache", "node_modules", "dist", "build", ".mypy_cache",
+}
+
+# Any parent path segment containing these means "external deps"
+_IGNORED_SEGMENTS = {
+    "site-packages", "dist-info", "egg-info",
+}
+
+def _is_ignored_path(p: Path) -> bool:
+    """Return True if file/dir is inside virtualenvs, caches, VCS or third-party trees."""
+    try:
+        for part in p.parts:
+            if part in _IGNORED_DIR_NAMES:
+                return True
+            # filter third-party trees regardless of platform
+            if part.lower() in _IGNORED_SEGMENTS:
+                return True
+        return False
+    except Exception:
+        return False
+
+def _iter_repo_files(root: Path, patterns: tuple[str, ...] = ("*.py",)) -> list[str]:
+    """Yield project files matching patterns, excluding ignored trees."""
+    out: list[str] = []
+    for pat in patterns:
+        for f in root.rglob(pat):
+            try:
+                if f.is_file() and not _is_ignored_path(f):
+                    out.append(str(f.relative_to(root)))
+            except Exception:
+                # best-effort; skip problematic paths
+                continue
+    # de-dup while preserving order
+    seen = set(); uniq = []
+    for s in out:
+        if s not in seen:
+            uniq.append(s); seen.add(s)
+    return uniq
+
 def _try_import(module_name: str):
     """
     Import for smoke test.
@@ -1325,9 +1369,9 @@ def _allowlist_path() -> Path:
     return _project_root() / "autodev" / "allowlist.txt"
 
 def _allowed_paths() -> list[str]:
-    """Allow LLM to modify any .py file under the project root."""
-    root = Path(__file__).resolve().parents[2]  # project root
-    return [str(p.relative_to(root)) for p in root.rglob("*.py")]
+    """Allow LLM to modify any project file (default *.py) excluding venv/third-party dirs."""
+    root = Path(__file__).resolve().parents[2]
+    return _iter_repo_files(root, patterns=("*.py",))
 
 def _normalize_targets_to_allowlist(targets: list[str], allowed: list[str]) -> list[str]:
     if not targets:

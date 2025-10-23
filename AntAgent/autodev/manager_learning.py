@@ -167,10 +167,13 @@ def _diff_touches_any_literal_in_real_file(diff_text: str, literals: list[str]) 
                 return True
     return False
 
+from dataclasses import dataclass, field  # keep if already present
+from typing import Optional, List
+
 @dataclass
 class LearningContext:
     """Enhanced context for learning from attempts with detailed debugging information"""
-    # Basic info (no defaults)
+    # Required
     timestamp: float
     goal: str
     file_path: str
@@ -179,51 +182,62 @@ class LearningContext:
     context_lines_used: int
     anchors_used: List[str]
 
-    # All fields with defaults
-    diff_content: str = ""  # Store the actual diff for analysis
-    llm_explanation: str = ""  # The explanation the LLM provided
-    engine_used: str = ""  # "llama", "openai", "deepseek", etc.
+    # Optional / telemetry (defaults keep old JSON compatible)
+    diff_content: str = ""               # unified diff text
+    llm_explanation: str = ""            # model’s explanation
+    engine_used: str = ""                # "llama", "openai", "deepseek", etc.
     llm_confidence: float = 0.0
     retry_count: int = 0
     error_type: Optional[str] = None
     error_detail: Optional[str] = None
-    debug_errors: List[str] = field(default_factory=list)  # All debug messages
-    validation_errors: List[str] = field(default_factory=list)  # Specific validation failures
+    debug_errors: List[str] = field(default_factory=list)
+    validation_errors: List[str] = field(default_factory=list)
+
+    # Newer timing fields (fixes your 'generation_time_ms' error)
     generation_time_ms: float = 0.0
     validation_time_ms: float = 0.0
     apply_time_ms: float = 0.0
     total_time_ms: float = 0.0
+
+    # Pattern/meta
     patterns_found: List[str] = field(default_factory=list)
     pattern_type: str = ""
     file_size_bytes: int = 0
     file_line_count: int = 0
     target_line_number: int = 0
-    learning_strategy: str = ""  # "conservative", "standard", "confident"
-    predicted_difficulty: float = 0.0
-    similar_successes_used: int = 0
+    learning_strategy: str = ""
 
+
+from dataclasses import dataclass, field  # keep if already present
+from typing import List, Dict
+import time
 
 @dataclass
 class PatternMemory:
     """Remembers successful patterns for specific types of changes"""
-    # Fields without defaults
-    pattern_type: str  # e.g., "comment_replacement", "function_rename", "import_cleanup"
-    success_rate: float
-    total_attempts: int
-    successful_attempts: int
-    example_goals: List[str]
-    common_anchors: List[str]
-    optimal_context_lines: int
-    file_patterns: Dict[str, int]  # Which files this pattern works in
-    last_updated: float
-    # Optional/learning fields (defaults added for backward compatibility with old JSON)
-    example_goals: list[str] = field(default_factory=list)
-    common_anchors: list[str] = field(default_factory=list)
+    # Core
+    pattern_type: str                               # e.g., "comment_modification"
+    success_rate: float = 0.0
+    total_attempts: int = 0
+    successful_attempts: int = 0
+
+    # Optional/learning (defaults keep old JSON compatible)
+    example_goals: List[str] = field(default_factory=list)
+    common_anchors: List[str] = field(default_factory=list)
     optimal_context_lines: int = 3
-    file_patterns: dict[str, int] = field(default_factory=dict)
+    file_patterns: Dict[str, int] = field(default_factory=dict)   # counters by filepath/glob
     avg_diff_size: float = 0.0
     last_updated: float = field(default_factory=lambda: time.time())
 
+from dataclasses import fields as _dc_fields
+
+def _coerce_dataclass(cls, data: dict):
+    """Filter unknown keys before constructing a dataclass (back/forward compat)."""
+    if data is None:
+        data = {}
+    allowed = {f.name for f in _dc_fields(cls)}
+    clean = {k: v for k, v in data.items() if k in allowed}
+    return cls(**clean)
 
 class EnhancedLearningSystem:
     """
@@ -317,7 +331,7 @@ class EnhancedLearningSystem:
         if SUCCESS_DB.exists():
             try:
                 data = json.loads(SUCCESS_DB.read_text(encoding="utf-8"))
-                return [LearningContext(**item) for item in data]
+                return [_coerce_dataclass(LearningContext, item) for item in data]
             except Exception:
                 pass
         return []
@@ -326,7 +340,7 @@ class EnhancedLearningSystem:
         if FAILURE_DB.exists():
             try:
                 data = json.loads(FAILURE_DB.read_text(encoding="utf-8"))
-                return [LearningContext(**item) for item in data]
+                return [_coerce_dataclass(LearningContext, item) for item in data]
             except Exception:
                 pass
         return []

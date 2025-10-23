@@ -1,1 +1,14 @@
-{}
+{
+  "comment_modification": {
+    "pattern_type": "comment_modification",
+    "success_rate": 0.0,
+    "total_attempts": 3,
+    "successful_attempts": 0,
+    "example_goals": [],
+    "common_anchors": [],
+    "optimal_context_lines": 3,
+    "file_patterns": {},
+    "last_updated": 1761200286.8724647,
+    "avg_diff_size": 0
+  }
+}

@@ -29,7 +29,8 @@
     "file_size_bytes": 0,
     "file_line_count": 0,
     "target_line_number": 0,
-    "learning_strategy": ""
+    "learning_strategy": "",
+    "predicted_difficulty": 0.0
   },
   {
     "timestamp": 1761200358.3857405,
@@ -61,7 +62,8 @@
     "file_size_bytes": 0,
     "file_line_count": 0,
     "target_line_number": 0,
-    "learning_strategy": ""
+    "learning_strategy": "",
+    "predicted_difficulty": 0.0
   },
   {
     "timestamp": 1761200405.4633904,
@@ -93,6 +95,7 @@
     "file_size_bytes": 0,
     "file_line_count": 0,
     "target_line_number": 0,
-    "learning_strategy": ""
+    "learning_strategy": "",
+    "predicted_difficulty": 0.0
   }
 ]

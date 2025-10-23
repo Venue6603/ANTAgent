@@ -207,8 +207,9 @@ class LearningContext:
     target_line_number: int = 0
     learning_strategy: str = ""
 
-    # Newer field causing your error
+    # Newer fields seen in your logs
     predicted_difficulty: float = 0.0
+    similar_successes_used: List[str] = field(default_factory=list)
 
 
 from dataclasses import dataclass, field  # keep if already present

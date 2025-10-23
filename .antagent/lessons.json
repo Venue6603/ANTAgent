@@ -1,9 +1,9 @@
 {
-  "total_attempts": 24,
+  "total_attempts": 28,
   "successful_changes": 0,
   "failure_reasons": {
-    "apply_failed": 4,
-    "validation_error": 4,
+    "apply_failed": 5,
+    "validation_error": 7,
     "no_diff_generated": 4,
     "checks_failed": 12
   },

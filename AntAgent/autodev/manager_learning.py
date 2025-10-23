@@ -253,16 +253,43 @@ class EnhancedLearningSystem:
     def load_lessons(self) -> Dict:
         if LESSONS.exists():
             try:
-                return json.loads(LESSONS.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+                loaded = json.loads(LESSONS.read_text(encoding="utf-8"))
+                # Ensure all required keys exist with proper defaults
+                loaded.setdefault("total_attempts", 0)
+                loaded.setdefault("successful_changes", 0)
+                loaded.setdefault("failure_reasons", {})
+                loaded.setdefault("anchor_effectiveness", {})
+                loaded.setdefault("file_difficulty", {})
+                loaded.setdefault("pattern_success_rate", {})
+                loaded.setdefault("anchor_phrases", [])
+                loaded.setdefault("last_10_goals", [])
+                loaded.setdefault("detailed_attempts", [])
+                loaded.setdefault("_failures", [])
+                loaded.setdefault("debug_error_patterns", [])
+                loaded.setdefault("validation_error_patterns", [])
+                loaded.setdefault("optimal_settings", {
+                    "context_lines": 3,
+                    "max_diff_size": 500,
+                    "preferred_engine": "llama"
+                })
+                return loaded
+            except Exception as e:
+                print(f"[WARNING] Failed to load lessons.json: {e}")
+
+        # Return default structure if file doesn't exist or fails to load
         return {
             "total_attempts": 0,
             "successful_changes": 0,
-            "failure_reasons": defaultdict(int),
-            "anchor_effectiveness": defaultdict(float),
-            "file_difficulty": defaultdict(float),
-            "pattern_success_rate": defaultdict(float),
+            "failure_reasons": {},
+            "anchor_effectiveness": {},
+            "file_difficulty": {},
+            "pattern_success_rate": {},
+            "anchor_phrases": [],
+            "last_10_goals": [],
+            "detailed_attempts": [],
+            "_failures": [],
+            "debug_error_patterns": [],
+            "validation_error_patterns": [],
             "optimal_settings": {
                 "context_lines": 3,
                 "max_diff_size": 500,
@@ -309,6 +336,215 @@ class EnhancedLearningSystem:
             "import_structures": {},  # Remember import patterns
             "comment_styles": {}  # Remember comment patterns
         }
+
+    def _record_success(self, success_data: dict):
+        """Record a successful attempt to the success database"""
+        try:
+            # Create a LearningContext from the success data
+            context = LearningContext(
+                timestamp=success_data.get("ts", time.time()),
+                goal=success_data.get("goal", ""),
+                file_path=success_data.get("file", ""),
+                success=True,
+                diff_size=success_data.get("diff_size", 0),
+                context_lines_used=success_data.get("context_lines", 3),
+                anchors_used=success_data.get("anchors", []),
+                diff_content=success_data.get("diff_content", ""),
+                llm_explanation=success_data.get("llm_explanation", ""),
+                engine_used=success_data.get("engine_used", ""),
+                llm_confidence=success_data.get("llm_confidence", 0.8),
+                retry_count=success_data.get("retry_count", 0),
+                error_type=None,
+                error_detail=None
+            )
+
+            # Add to success database
+            self.success_db.append(context)
+
+            # Update anchor effectiveness
+            for anchor in context.anchors_used:
+                if anchor:
+                    current = self.lessons["anchor_effectiveness"].get(anchor, 0.0)
+                    self.lessons["anchor_effectiveness"][anchor] = current * 0.8 + 1.0 * 0.2
+
+            # Update pattern memory
+            pattern_type = self.classify_goal(context.goal)
+            if pattern_type not in self.patterns:
+                self.patterns[pattern_type] = PatternMemory(
+                    pattern_type=pattern_type,
+                    total_attempts=0,
+                    successful_attempts=0,
+                    success_rate=0.0,
+                    common_anchors=[],
+                    optimal_context_lines=3,
+                    avg_diff_size=0
+                )
+
+            pattern = self.patterns[pattern_type]
+            pattern.total_attempts += 1
+            pattern.successful_attempts += 1
+            pattern.success_rate = pattern.successful_attempts / pattern.total_attempts
+
+            # Update file difficulty
+            if context.file_path:
+                current_difficulty = self.lessons["file_difficulty"].get(context.file_path, 0.5)
+                self.lessons["file_difficulty"][context.file_path] = max(0.1, current_difficulty * 0.9)
+
+            # Add to detailed attempts
+            self.lessons.setdefault("detailed_attempts", []).append({
+                "timestamp": context.timestamp,
+                "goal": context.goal,
+                "file_path": context.file_path,
+                "success": True,
+                "engine_used": context.engine_used,
+                "llm_explanation": context.llm_explanation,
+                "performance": {
+                    "generation_time_ms": context.generation_time_ms,
+                    "validation_time_ms": context.validation_time_ms,
+                    "apply_time_ms": context.apply_time_ms,
+                    "total_time_ms": context.total_time_ms
+                },
+                "context": {
+                    "lines_used": context.context_lines_used,
+                    "anchors_used": context.anchors_used,
+                    "strategy": context.learning_strategy,
+                    "predicted_difficulty": context.predicted_difficulty
+                }
+            })
+
+            if len(self.lessons["detailed_attempts"]) > 100:
+                self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
+
+        except Exception as e:
+            print(f"[WARNING] Failed to record success: {e}")
+
+    def _record_failure(self, failure_data: dict):
+        """Record a failed attempt to the failure database"""
+        try:
+            # Create a LearningContext from the failure data
+            context = LearningContext(
+                timestamp=failure_data.get("timestamp", time.time()),
+                goal=failure_data.get("goal", ""),
+                file_path=failure_data.get("file_path", ""),
+                success=False,
+                diff_size=failure_data.get("diff_size", 0),
+                context_lines_used=failure_data.get("context_lines_used", 3),
+                anchors_used=failure_data.get("anchors_used", []),
+                diff_content=failure_data.get("diff_content", ""),
+                llm_explanation=failure_data.get("llm_explanation", ""),
+                engine_used=failure_data.get("engine_used", ""),
+                llm_confidence=failure_data.get("llm_confidence", 0.3),
+                retry_count=failure_data.get("retry_count", 0),
+                error_type=failure_data.get("error_type", "unknown"),
+                error_detail=failure_data.get("error_detail", ""),
+                debug_errors=failure_data.get("debug_errors", []),
+                validation_errors=failure_data.get("validation_errors", []),
+                generation_time_ms=failure_data.get("generation_time_ms", 0.0),
+                validation_time_ms=failure_data.get("validation_time_ms", 0.0),
+                apply_time_ms=failure_data.get("apply_time_ms", 0.0),
+                total_time_ms=failure_data.get("total_time_ms", 0.0),
+                patterns_found=failure_data.get("patterns_found", []),
+                pattern_type=failure_data.get("pattern_type", ""),
+                file_size_bytes=failure_data.get("file_size_bytes", 0),
+                file_line_count=failure_data.get("file_line_count", 0),
+                target_line_number=failure_data.get("target_line_number", 0),
+                learning_strategy=failure_data.get("learning_strategy", ""),
+                predicted_difficulty=failure_data.get("predicted_difficulty", 0.0),
+                similar_successes_used=failure_data.get("similar_successes_used", 0)
+            )
+
+            # Add to failure database
+            self.failure_db.append(context)
+
+            # Update anchor effectiveness (reduce for failures)
+            for anchor in context.anchors_used:
+                if anchor:
+                    current = self.lessons["anchor_effectiveness"].get(anchor, 0.5)
+                    self.lessons["anchor_effectiveness"][anchor] = max(0.0, current * 0.9 - 0.05)
+
+            # Update pattern memory
+            pattern_type = self.classify_goal(context.goal)
+            if pattern_type not in self.patterns:
+                self.patterns[pattern_type] = PatternMemory(
+                    pattern_type=pattern_type,
+                    total_attempts=0,
+                    successful_attempts=0,
+                    success_rate=0.0,
+                    common_anchors=[],
+                    optimal_context_lines=3,
+                    avg_diff_size=0
+                )
+
+            pattern = self.patterns[pattern_type]
+            pattern.total_attempts += 1
+            pattern.success_rate = pattern.successful_attempts / pattern.total_attempts
+
+            # Update file difficulty (failure increases difficulty)
+            if context.file_path:
+                current_difficulty = self.lessons["file_difficulty"].get(context.file_path, 0.5)
+                self.lessons["file_difficulty"][context.file_path] = min(1.0, current_difficulty * 1.1 + 0.05)
+
+            # Track error patterns
+            self.lessons.setdefault("debug_error_patterns", []).extend(context.debug_errors[:3])
+            self.lessons.setdefault("validation_error_patterns", []).extend(context.validation_errors[:3])
+
+            if len(self.lessons.get("debug_error_patterns", [])) > 50:
+                self.lessons["debug_error_patterns"] = self.lessons["debug_error_patterns"][-50:]
+            if len(self.lessons.get("validation_error_patterns", [])) > 50:
+                self.lessons["validation_error_patterns"] = self.lessons["validation_error_patterns"][-50:]
+
+            # Add to detailed attempts
+            self.lessons.setdefault("detailed_attempts", []).append({
+                "timestamp": context.timestamp,
+                "goal": context.goal,
+                "file_path": context.file_path,
+                "success": False,
+                "engine_used": context.engine_used,
+                "llm_explanation": context.llm_explanation,
+                "error_type": context.error_type,
+                "error_detail": context.error_detail,
+                "debug_errors": context.debug_errors,
+                "validation_errors": context.validation_errors,
+                "performance": {
+                    "generation_time_ms": context.generation_time_ms,
+                    "validation_time_ms": context.validation_time_ms,
+                    "apply_time_ms": context.apply_time_ms,
+                    "total_time_ms": context.total_time_ms
+                },
+                "context": {
+                    "lines_used": context.context_lines_used,
+                    "anchors_used": context.anchors_used,
+                    "strategy": context.learning_strategy,
+                    "predicted_difficulty": context.predicted_difficulty
+                }
+            })
+
+            if len(self.lessons["detailed_attempts"]) > 100:
+                self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
+
+            # Add to lessons failure tracking
+            self.lessons.setdefault("_failures", []).append({
+                "error_type": context.error_type,
+                "error_detail": context.error_detail,
+                "timestamp": context.timestamp
+            })
+
+            if len(self.lessons.get("_failures", [])) > 50:
+                self.lessons["_failures"] = self.lessons["_failures"][-50:]
+
+        except Exception as e:
+            print(f"[WARNING] Failed to record failure: {e}")
+
+
+
+
+
+
+
+
+
+
+
 
     def save_all(self):
         """Persist all learning data"""

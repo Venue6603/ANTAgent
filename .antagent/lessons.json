@@ -1,9 +1,10 @@
 {
-  "total_attempts": 8,
+  "total_attempts": 9,
   "successful_changes": 0,
   "failure_reasons": {
     "apply_failed": 4,
-    "validation_error": 4
+    "validation_error": 4,
+    "no_diff_generated": 1
   },
   "anchor_effectiveness": {},
   "file_difficulty": {
@@ -282,5 +283,7 @@
         "predicted_difficulty": 0.0
       }
     }
-  ]
+  ],
+  "anchor_phrases": [],
+  "last_10_goals": []
 }

@@ -2,7 +2,7 @@
 +++ b/AntAgent/autodev/manager_learning.py
 @@ -251,20 +251,47 @@ class EnhancedLearningSystem:
          CONTEXT_MEMORY = base / "context_memory.json"
-
+ 
      def load_lessons(self) -> Dict:
          if LESSONS.exists():
              try:
@@ -31,7 +31,7 @@
 +                return loaded
 +            except Exception as e:
 +                print(f"[WARNING] Failed to load lessons.json: {e}")
-+
++        
 +        # Return default structure if file doesn't exist or fails to load
          return {
              "total_attempts": 0,
@@ -59,7 +59,7 @@
 @@ -310,6 +337,229 @@ class EnhancedLearningSystem:
              "comment_styles": {}  # Remember comment patterns
          }
-
+ 
 +    def _record_success(self, success_data: dict):
 +        """Record a successful attempt to the success database"""
 +        try:
@@ -80,17 +80,17 @@
 +                error_type=None,
 +                error_detail=None
 +            )
-+
++            
 +            # Add to success database
 +            self.success_db.append(context)
-+
++            
 +            # Update anchor effectiveness
 +            for anchor in context.anchors_used:
 +                if anchor:
 +                    current = self.lessons["anchor_effectiveness"].get(anchor, 0.0)
 +                    # Weighted average with more weight on recent successes
 +                    self.lessons["anchor_effectiveness"][anchor] = current * 0.8 + 1.0 * 0.2
-+
++            
 +            # Update pattern memory
 +            pattern_type = self.classify_goal(context.goal)
 +            if pattern_type not in self.patterns:
@@ -103,22 +103,22 @@
 +                    optimal_context_lines=3,
 +                    avg_diff_size=0
 +                )
-+
++            
 +            pattern = self.patterns[pattern_type]
 +            pattern.total_attempts += 1
 +            pattern.successful_attempts += 1
 +            pattern.success_rate = pattern.successful_attempts / pattern.total_attempts
-+
++            
 +            # Update common anchors
 +            for anchor in context.anchors_used:
 +                if anchor and anchor not in pattern.common_anchors:
 +                    pattern.common_anchors.append(anchor)
-+
++            
 +            # Update file difficulty (success reduces difficulty)
 +            if context.file_path:
 +                current_difficulty = self.lessons["file_difficulty"].get(context.file_path, 0.5)
 +                self.lessons["file_difficulty"][context.file_path] = max(0.1, current_difficulty * 0.9)
-+
++            
 +            # Add to detailed attempts for reporting
 +            self.lessons.setdefault("detailed_attempts", []).append({
 +                "timestamp": context.timestamp,
@@ -140,14 +140,14 @@
 +                    "predicted_difficulty": context.predicted_difficulty
 +                }
 +            })
-+
++            
 +            # Keep only last 100 detailed attempts
 +            if len(self.lessons["detailed_attempts"]) > 100:
 +                self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
-+
++            
 +        except Exception as e:
 +            print(f"[WARNING] Failed to record success: {e}")
-+
++    
 +    def _record_failure(self, failure_data: dict):
 +        """Record a failed attempt to the failure database"""
 +        try:
@@ -182,17 +182,17 @@
 +                predicted_difficulty=failure_data.get("predicted_difficulty", 0.0),
 +                similar_successes_used=failure_data.get("similar_successes_used", 0)
 +            )
-+
++            
 +            # Add to failure database
 +            self.failure_db.append(context)
-+
++            
 +            # Update anchor effectiveness (reduce for failures)
 +            for anchor in context.anchors_used:
 +                if anchor:
 +                    current = self.lessons["anchor_effectiveness"].get(anchor, 0.5)
 +                    # Weighted average with penalty for failures
 +                    self.lessons["anchor_effectiveness"][anchor] = max(0.0, current * 0.9 - 0.05)
-+
++            
 +            # Update pattern memory
 +            pattern_type = self.classify_goal(context.goal)
 +            if pattern_type not in self.patterns:
@@ -205,26 +205,26 @@
 +                    optimal_context_lines=3,
 +                    avg_diff_size=0
 +                )
-+
++            
 +            pattern = self.patterns[pattern_type]
 +            pattern.total_attempts += 1
 +            pattern.success_rate = pattern.successful_attempts / pattern.total_attempts
-+
++            
 +            # Update file difficulty (failure increases difficulty)
 +            if context.file_path:
 +                current_difficulty = self.lessons["file_difficulty"].get(context.file_path, 0.5)
 +                self.lessons["file_difficulty"][context.file_path] = min(1.0, current_difficulty * 1.1 + 0.05)
-+
++            
 +            # Track error patterns for debugging
 +            self.lessons.setdefault("debug_error_patterns", []).extend(context.debug_errors[:3])
 +            self.lessons.setdefault("validation_error_patterns", []).extend(context.validation_errors[:3])
-+
++            
 +            # Keep only last 50 error patterns
 +            if len(self.lessons.get("debug_error_patterns", [])) > 50:
 +                self.lessons["debug_error_patterns"] = self.lessons["debug_error_patterns"][-50:]
 +            if len(self.lessons.get("validation_error_patterns", [])) > 50:
 +                self.lessons["validation_error_patterns"] = self.lessons["validation_error_patterns"][-50:]
-+
++            
 +            # Add to detailed attempts for reporting
 +            self.lessons.setdefault("detailed_attempts", []).append({
 +                "timestamp": context.timestamp,
@@ -250,22 +250,22 @@
 +                    "predicted_difficulty": context.predicted_difficulty
 +                }
 +            })
-+
++            
 +            # Keep only last 100 detailed attempts
 +            if len(self.lessons["detailed_attempts"]) > 100:
 +                self.lessons["detailed_attempts"] = self.lessons["detailed_attempts"][-100:]
-+
++            
 +            # Add to lessons failure tracking
 +            self.lessons.setdefault("_failures", []).append({
 +                "error_type": context.error_type,
 +                "error_detail": context.error_detail,
 +                "timestamp": context.timestamp
 +            })
-+
++            
 +            # Keep only last 50 failures in this list
 +            if len(self.lessons.get("_failures", [])) > 50:
 +                self.lessons["_failures"] = self.lessons["_failures"][-50:]
-+
++            
 +        except Exception as e:
 +            print(f"[WARNING] Failed to record failure: {e}")
 +

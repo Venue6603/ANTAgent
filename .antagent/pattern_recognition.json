@@ -2,7 +2,7 @@
   "comment_modification": {
     "pattern_type": "comment_modification",
     "success_rate": 0.0,
-    "total_attempts": 7,
+    "total_attempts": 10,
     "successful_attempts": 0,
     "example_goals": [],
     "common_anchors": [],

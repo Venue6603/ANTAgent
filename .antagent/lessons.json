@@ -1,8 +1,8 @@
 {
-  "total_attempts": 78,
+  "total_attempts": 79,
   "successful_changes": 0,
   "failure_reasons": {
-    "apply_failed": 9,
+    "apply_failed": 10,
     "validation_error": 22,
     "no_diff_generated": 11,
     "checks_failed": 36
@@ -22,11 +22,6 @@
     "preferred_engine": "llama"
   },
   "_failures": [
-    {
-      "error_type": "no_diff_generated",
-      "error_detail": "Model produced no diff",
-      "timestamp": 1761201030.7686236
-    },
     {
       "error_type": "checks_failed",
       "error_detail": "compileall rc=1 \n[interrupted] | import AntAgent.app rc=1 Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\James\\PycharmProjects\\ANTAgent\\AntAgent\\app.py\", line 11, in <module>\n    from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile\nModuleNotFoundError: No module named 'fastapi'",
@@ -271,6 +266,11 @@
       "error_type": "apply_failed",
       "error_detail": "Patch apply failed | Lenient: old block not found in target",
       "timestamp": 1761263690.4283412
+    },
+    {
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "timestamp": 1761264131.494906
     }
   ],
   "detailed_attempts": [
@@ -1956,6 +1956,34 @@
     },
     {
       "timestamp": 1761263690.4283412,
+      "goal": "in manager.py, put a random comment beneath '# Random animal: Giraffe'",
+      "file_path": "AntAgent/autodev/manager.py",
+      "success": false,
+      "engine_used": "ollama",
+      "llm_explanation": "none",
+      "error_type": "apply_failed",
+      "error_detail": "Patch apply failed | Lenient: old block not found in target",
+      "debug_errors": [],
+      "validation_errors": [],
+      "performance": {
+        "generation_time_ms": 0.0,
+        "validation_time_ms": 0.0,
+        "apply_time_ms": 0.0,
+        "total_time_ms": 0.0
+      },
+      "context": {
+        "lines_used": 5,
+        "anchors_used": [
+          "from AntAgent.autodev.manager_learning import get_learning_system, _allowed_paths",
+          "# Random animal: Giraffe",
+          "from pathlib import Path as _Path"
+        ],
+        "strategy": "",
+        "predicted_difficulty": 0.0
+      }
+    },
+    {
+      "timestamp": 1761264131.494906,
       "goal": "in manager.py, put a random comment beneath '# Random animal: Giraffe'",
       "file_path": "AntAgent/autodev/manager.py",
       "success": false,

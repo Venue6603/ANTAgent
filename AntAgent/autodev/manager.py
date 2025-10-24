@@ -422,280 +422,136 @@ def _llama_chat_diff_only(llm, prompt: str, *, max_tokens: int = 2048) -> str:
 
 def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, str, str]:
     """
-    Generate a patch with detailed explanation of the approach.
-    Returns: (summary, unified_diff, explanation)
-
-    Key guarantees in this implementation:
-    - The LLM is shown BOTH:
-        (A) a numbered/annotated view for reasoning and anchoring
-        (B) the raw/unadorned file bytes to use for composing the unified diff
-    - The LLM is explicitly instructed to build the diff ONLY from the raw content,
-      never using the numbered lines.
-    - We detect and scrub accidental line-number artifacts if they sneak into diff context.
-    - We preserve and expand debug output via _debug_collector and print statements.
+    Generate a patch with full context visibility.
+    Shows the LLM real file bytes (no fake line numbers),
+    sanitizes its diff, and rebuilds from updated-file if needed.
     """
-
-    import os
-    import re
-    import json
+    import os, re, json, difflib
     from pathlib import Path
 
-    # --- Debug collector injection ---
-    # ensure a globally available debug collector exists
-    global _debug_collector  # defined elsewhere in this module
-    if "_debug_collector" not in globals() or _debug_collector is None:
-        _debug_collector = {}
-    _debug_collector["engine_used"] = "unknown"
-    _debug_collector["llm_explanation"] = ""
+    print(f"[ENGINE] Goal: {goal}")
 
-    # --- Resolve target paths from constraints, expand directories safely ---
+    # ---- resolve target file -------------------------------------------------
     target_paths = list(constraints.get("paths") or [])
-    require_context_lines = int(constraints.get("require_context_lines", 6))
-    must_anchor_any = list(constraints.get("must_anchor_any", []))
+    all_allowed = _allowed_paths()
+    expanded = []
+    for p in target_paths:
+        P = Path(_repo_root()) / p
+        if P.is_dir():
+            pref = str(p).replace("\\", "/").rstrip("/") + "/"
+            for a in all_allowed:
+                if a.replace("\\", "/").startswith(pref):
+                    expanded.append(a)
+        elif p in all_allowed:
+            expanded.append(p)
+    if expanded:
+        target_paths = sorted(set(expanded))
 
-    print(f"[ENGINE] Goal: {goal[:120]}{'…' if len(goal) > 120 else ''}")
-    print(f"[ENGINE] Constraints: require_context_lines={require_context_lines}, anchors={len(must_anchor_any)}")
-
-    # Expand directories against allowlist
-    all_allowed = set(_allowed_paths())
-    expanded_paths: list[str] = []
-    for path in target_paths:
-        p = (Path(_repo_root()) / path)
-        if p.is_dir():
-            dir_norm = path.replace("\\", "/").rstrip("/") + "/"
-            for allowed in all_allowed:
-                a = allowed.replace("\\", "/")
-                if a.startswith(dir_norm):
-                    expanded_paths.append(allowed)
-        else:
-            if path in all_allowed:
-                expanded_paths.append(path)
-
-    if expanded_paths:
-        target_paths = sorted(set(expanded_paths), key=lambda s: (s.count("/"), s))
-
-    # Read candidate files (manager code reads in-path contents)
     files = _read_files(target_paths)
     if not files:
-        msg = "No target files found in constraints.paths (after allowlist/expansion)."
-        print(f"[ENGINE] {msg}")
-        return "No files to process", "", msg
-
-    # Focus on primary file (first in list)
-    path, content = files[0]
+        return "No files to process", "", "No target files found"
+    path, before_text = files[0]
     print(f"[ENGINE] Primary file: {path}")
 
-    # Prepare numbered view for analysis (never used for diff text)
-    lines = content.splitlines()
-    numbered_lines = [f"{i + 1:5}: {line}" for i, line in enumerate(lines)]
-    numbered_view = "\n".join(numbered_lines)
+    # ---- numbered + raw views -----------------------------------------------
+    numbered = "\n".join(f"{i+1:5}: {ln}" for i, ln in enumerate(before_text.splitlines()))
+    raw = before_text
 
-    # Raw content (must be exactly the text used to build unified diff)
-    raw_view = content
+    # ---- build LLM prompt ----------------------------------------------------
+    prompt = f"""
+OBJECTIVE:
+{goal}
 
-    # Build anchor block for the prompt (helpful but optional)
-    anchor_hint = ""
-    if must_anchor_any:
-        # show top-N anchors to keep prompt concise
-        anchors_preview = "\n".join(f"- {a}" for a in must_anchor_any[:10])
-        anchor_hint = f"\nANCHORS (use these to find the exact spot):\n{anchors_preview}\n"
+TARGET FILE: {path}
 
-    # Prompt segmentation: ANALYSIS (numbered) vs. REALITY (raw)
-    prompt = (
-        f"OBJECTIVE:\n{goal}\n\n"
-        f"TARGET FILE: {path}\n"
-        f"{anchor_hint}"
-        "CONTEXT RULES:\n"
-        "1) Use the ANALYSIS VIEW (numbered lines) only to reason about where to change.\n"
-        "2) Use the RAW VIEW (exact file bytes) to construct the unified diff context and changes.\n"
-        "3) Context lines in hunks must match the RAW VIEW exactly (no line numbers, no extra spaces).\n"
-        "4) Produce a valid unified diff that applies cleanly with 'git apply -p0' or a standard patcher.\n"
-        "5) Keep the patch minimal and targeted. Do not modify tests or unrelated code.\n"
-        "6) If you add imports or change code, keep style consistent and avoid reorder unless necessary.\n"
-        "\n"
-        "FORMAT:\n"
-        "First, write 1-2 sentences explaining the change (analysis). Then output the complete unified diff.\n"
-        "Diff format must include lines:\n"
-        f"  diff --git a/{path} b/{path}\n"
-        f"  --- a/{path}\n"
-        f"  +++ b/{path}\n"
-        "  @@ -<start,count> +<start,count> @@\n"
-        "Where ' ' (space) means context, '-' removed lines, '+' added lines.\n"
-        "Do NOT include line numbers in any diff lines.\n"
-        "\n"
-        "ANALYSIS VIEW (NUMBERED):\n"
-        "----------------------------------------\n"
-        f"{numbered_view}\n"
-        "----------------------------------------\n"
-        "\n"
-        "RAW VIEW (EXACT CONTENT FOR DIFF):\n"
-        "----------------------------------------\n"
-        f"{raw_view}\n"
-        "----------------------------------------\n"
-        "\n"
-        "Generate the unified diff now."
-    )
+INSTRUCTIONS:
+1. Use ANALYSIS VIEW (numbered) only to reason about positions.
+2. Build unified diff using RAW VIEW — never include line numbers.
+3. After diff, output full updated file inside a fenced block labelled ```updated-file.
 
-    # Small defensive truncation for extremely large files (keeps both views consistent)
-    # We keep the RAW VIEW whole whenever possible; if truncation is required, we tell the model not to edit outside shown region.
-    MAX_PROMPT_CHARS = int(os.getenv("ANT_MAX_PROMPT_CHARS", "180000"))
-    if len(prompt) > MAX_PROMPT_CHARS:
-        print(f"[ENGINE] Prompt too large ({len(prompt)} chars), truncating views while preserving head/tail.")
-        head = raw_view[:60000]
-        tail = raw_view[-60000:]
-        raw_view_trunc = head + "\n# …(truncated)…\n" + tail
+ANALYSIS VIEW (NUMBERED)
+----------------------------------------
+{numbered}
+----------------------------------------
 
-        numbered_head = numbered_view.splitlines()[:4000]
-        numbered_tail = numbered_view.splitlines()[-4000:]
-        numbered_view_trunc = "\n".join(numbered_head + ["# …(truncated)…"] + numbered_tail)
+RAW VIEW (EXACT BYTES)
+----------------------------------------
+{raw}
+----------------------------------------
+""".strip()
 
-        prompt = (
-            f"OBJECTIVE:\n{goal}\n\nTARGET FILE: {path}\n"
-            f"{anchor_hint}"
-            "NOTE: File was truncated in this prompt. Only change code within the visible regions.\n\n"
-            "ANALYSIS VIEW (NUMBERED):\n----------------------------------------\n"
-            f"{numbered_view_trunc}\n----------------------------------------\n\n"
-            "RAW VIEW (EXACT CONTENT FOR DIFF):\n----------------------------------------\n"
-            f"{raw_view_trunc}\n----------------------------------------\n\n"
-            "Generate the unified diff now, with proper headers/hunks."
-        )
+    # ---- helper functions ----------------------------------------------------
+    def _split(full: str):
+        m = re.search(r"```updated-file\s*\n(.*?)\n```", full, flags=re.DOTALL)
+        updated = m.group(1) if m else ""
+        d = full.find("diff --git")
+        if d == -1:
+            return full.strip(), "", updated
+        return full[:d].strip(), full[d:].strip(), updated
 
-    # --- Run engines: first try local Ollama adapter if available, then OpenAI fallback ---
+    def _clean(candidate: str):
+        candidate = re.sub(r'(?m)^([ \-\+])\s*\d+\:\s?', r'\1', candidate)
+        for pat in [r'^#\s*={3,}.*$', r'^#\s*OpenAI-first.*$', r'^#\s*LLAMA-SMOKE.*$']:
+            candidate = re.sub(pat, '', candidate, flags=re.MULTILINE)
+        return candidate
+
+    def _basic_has_changes(diff_text: str):
+        for ln in diff_text.splitlines():
+            if (ln.startswith('+') and not ln.startswith('+++')) or (ln.startswith('-') and not ln.startswith('---')):
+                return True
+        return False
+
+    def _make_unified_diff(a_path, before, after, context=6):
+        a = before.splitlines(keepends=True)
+        b = after.splitlines(keepends=True)
+        ud = list(difflib.unified_diff(a, b, fromfile=f"a/{a_path}", tofile=f"b/{a_path}", n=context))
+        if not ud:
+            return ""
+        text = "".join(ud)
+        if not text.startswith("--- "):
+            text = f"--- a/{a_path}\n+++ b/{a_path}\n" + text
+        return f"diff --git a/{a_path} b/{a_path}\n{text}"
+
+    # ---- run LLM (Ollama) ----------------------------------------------------
     diff_text = ""
+    updated_file = ""
     explanation = ""
     used_engine = None
-
-    def _extract_explanation_and_diff(text: str) -> Tuple[str, str]:
-        # Split the LLM output: everything before first diff marker is explanation; rest is diff
-        idx = text.find("diff --git")
-        if idx == -1:
-            return (text.strip(), "")
-        return (text[:idx].strip(), text[idx:].strip())
-
-    def _strip_line_numbers_from_diff(candidate: str) -> str:
-        # Remove accidental "  123: ..." number prefixes from context/change lines
-        cleaned = []
-        pat = re.compile(r'^([ \-\+])\s*\d+\:\s?')
-        for ln in candidate.splitlines():
-            if (ln.startswith(' ') or ln.startswith('-') or ln.startswith('+')) and not ln.startswith('---') and not ln.startswith('+++'):
-                cleaned.append(pat.sub(r'\1', ln))
-            else:
-                cleaned.append(ln)
-        return "\n".join(cleaned)
-
-    def _basic_diff_ok(candidate: str) -> Tuple[bool, str]:
-        # lightweight validation before the full validator in the pipeline
-        has_header = candidate.startswith(f"diff --git a/{path} b/{path}")
-        has_markers = ("--- a/" in candidate and "+++ b/" in candidate)
-        has_hunk = "@@" in candidate
-        has_changes = any(l.startswith(('+', '-')) and not l.startswith(('+++', '---')) for l in candidate.splitlines())
-        return (has_header and has_markers and has_hunk and has_changes,
-                f"hdr={has_header}, marks={has_markers}, hunk={has_hunk}, changes={has_changes}")
-
-    # 1) Try Ollama adapter (local)
     try:
         from ollama_adapter import Llama
-        model_name = os.getenv("ANT_OLLAMA_MODEL", "").strip() or "deepseek-coder-v2:16b"
-        n_ctx = int(os.getenv("ANT_OLLAMA_CTX", "4096"))
-
-        print(f"[ENGINE] Using Ollama model: {model_name} (ctx={n_ctx})")
-        llm = Llama(model=model_name, n_ctx=n_ctx, verbose=False)
+        llm = Llama(model=os.getenv("ANT_OLLAMA_MODEL", "deepseek-coder-v2:16b"), n_ctx=4096, verbose=False)
         resp = llm.create_chat_completion(
             messages=[
                 {"role": "system",
-                 "content": "You are a highly precise refactoring assistant. "
-                            "Analyze using line numbers, but construct diffs ONLY from raw file text."},
+                 "content": "You are a diff generator. Analyse with line numbers but output unified diffs using exact file bytes."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=float(os.getenv("ANT_OLLAMA_TEMP", "0.0")),
-            top_p=float(os.getenv("ANT_OLLAMA_TOP_P", "0.1")),
-            max_tokens=int(os.getenv("ANT_OLLAMA_MAX_TOKENS", "2048")),
+            temperature=0.0,
+            max_tokens=2048,
         )
-        full = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
-        print(f"[ENGINE] Ollama response length: {len(full)} chars")
-
-        exp, candidate = _extract_explanation_and_diff(full)
-        explanation = exp or ""
-        _debug_collector["llm_explanation"] = explanation[:4000]  # keep it but cap for logs
-
-        if candidate:
-            cand = _strip_line_numbers_from_diff(candidate)
-            ok, why = _basic_diff_ok(cand)
-            print(f"[ENGINE] Ollama diff basic check: {why}")
-            if ok:
-                diff_text = cand
-                used_engine = "ollama"
-                print("[ENGINE] LLM generated valid diff (first try)")
-            else:
-                print("[ENGINE] LLM diff missing required parts; will try fallback.")
-        else:
-            print("[ENGINE] No diff marker found in Ollama output; will try fallback.")
-
+        full = resp["choices"][0]["message"]["content"]
+        explanation, candidate, updated_file = _split(full)
+        candidate = _clean(candidate)
+        if _basic_has_changes(candidate):
+            diff_text = candidate
+            used_engine = "ollama"
+            print("[ENGINE] LLM generated candidate diff.")
     except Exception as e:
         print(f"[ENGINE] Ollama error: {e}")
 
-    # 2) Fallback to OpenAI (if configured)
-    if not diff_text and os.getenv("OPENAI_API_KEY"):
-        try:
-            print("[ENGINE] Trying OpenAI fallback")
-            import requests
-            api_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-            headers = {
-                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-                "Content-Type": "application/json",
-            }
-            body = {
-                "model": api_model,
-                "messages": [
-                    {"role": "system",
-                     "content": "You generate unified diffs from raw file text only; never include line numbers in diff context."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": float(os.getenv("OPENAI_TEMP", "0.0")),
-                "top_p": float(os.getenv("OPENAI_TOP_P", "0.1")),
-                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "2048")),
-            }
-            r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, data=json.dumps(body), timeout=60)
-            r.raise_for_status()
-            full = r.json()["choices"][0]["message"]["content"] or ""
-            print(f"[ENGINE] OpenAI response length: {len(full)} chars")
+    # ---- fallback rebuild from updated-file ---------------------------------
+    if not diff_text and updated_file.strip():
+        diff_text = _make_unified_diff(path, raw, updated_file)
+        if diff_text:
+            used_engine = "reconciled"
+            print("[ENGINE] Rebuilt diff from updated-file.")
 
-            exp, candidate = _extract_explanation_and_diff(full)
-            explanation = explanation or exp or "Generated via OpenAI"
-            _debug_collector["llm_explanation"] = explanation[:4000]
-
-            if candidate:
-                cand = _strip_line_numbers_from_diff(candidate)
-                ok, why = _basic_diff_ok(cand)
-                if ok:
-                    # run your existing validator if present
-                    try:
-                        _validate_unified_diff(cand)
-                    except Exception as ve:
-                        print(f"[ENGINE] OpenAI diff rejected by validator: {ve}")
-                    diff_text = cand
-                    used_engine = "openai"
-                    print("[ENGINE] OpenAI generated valid diff")
-                else:
-                    print(f"[ENGINE] OpenAI diff missing required parts: {why}")
-            else:
-                print("[ENGINE] Could not extract diff from OpenAI output.")
-        except Exception as e:
-            print(f"[ENGINE] OpenAI error: {e}")
-
-    # Final debug, summary
-    _debug_collector["engine_used"] = used_engine or "failed"
-    summary = f"Goal: {goal}\nTarget: {path}\nEngine: {_debug_collector['engine_used']}"
-
+    summary = f"Goal: {goal}\nTarget: {path}\nEngine: {used_engine or 'failed'}"
     if diff_text:
-        # Warn if any numbered prefixes remain
-        if re.search(r'(?m)^[ \-\+]\s*\d+\:\s', diff_text):
-            print("[ENGINE] WARNING: Final diff still contains line-number artifacts!")
         print(f"[ENGINE] Final diff length: {len(diff_text)} chars")
     else:
-        print("[ENGINE] No diff generated by any engine")
-
-    return summary, diff_text, (explanation or "No explanation available")
+        print("[ENGINE] No diff generated.")
+    return summary, diff_text, explanation or "No explanation available"
 
 
 

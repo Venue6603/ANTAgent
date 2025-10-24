@@ -459,9 +459,12 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
     path, content = files[0]  # Focus on first file
     lines = content.splitlines()
 
-    # Create numbered version for analysis
+    # Create numbered version for ANALYSIS ONLY
     numbered_lines = [f"{i + 1:4}: {line}" for i, line in enumerate(lines)]
     numbered_content = "\n".join(numbered_lines)
+
+    # Keep the ACTUAL content for diff generation - THIS IS CRITICAL
+    actual_content = content  # Raw file content without line numbers
 
     used_engine = None
     diff_text = ""
@@ -474,27 +477,44 @@ def propose_patch_with_explanation(goal: str, constraints: Dict) -> Tuple[str, s
         if model_path and Path(model_path).exists():
             n_ctx = 8192
 
-            # Single combined prompt - analysis and diff generation together
+            print(f"[ENGINE] Attempting LLM with model at: {model_path}")
+            print(f"[ENGINE] Processing file: {path}")
+            print(f"[ENGINE] File has {len(lines)} lines, {len(content)} chars")
+
+            # Updated prompt that clearly separates analysis from diff generation
             combined_prompt = f"""Task: {goal}
 
 File to modify: {path}
 
-Current file content with line numbers:
-{numbered_content[:6000]}
+PART 1 - FILE WITH LINE NUMBERS (for identifying where to make changes):
+{numbered_content[:3000]}
+
+PART 2 - ACTUAL FILE CONTENT (MUST use this for generating the diff):
+```
+{actual_content[:3000]}
+```
 
 Instructions:
-1. First, identify what needs to change and where
-2. Then create a unified diff showing that change
+1. First, use PART 1 to identify what line numbers need to change
+2. Then, generate a unified diff using ONLY the content from PART 2
+3. CRITICAL: The context lines in your diff must be EXACT copies from PART 2, without any line numbers
 
-A unified diff has this structure:
-- Header: diff --git a/filepath b/filepath
-- File markers: --- a/filepath and +++ b/filepath  
+A unified diff has this format:
+- Header: diff --git a/{path} b/{path}
+- File markers: --- a/{path} and +++ b/{path}  
 - Hunk header: @@ -start,count +start,count @@
-- Lines: unchanged lines start with space, removed with -, added with +
+- Context lines: start with single space, must be EXACT text from PART 2
+- Removed lines: start with -, show exact text to remove from PART 2
+- Added lines: start with +, show what to add
+
+CRITICAL RULES:
+- Do NOT include line numbers like "  15:" in the diff
+- Context lines must be EXACTLY as they appear in PART 2
+- If PART 2 shows "def foo():", your context line must be " def foo():" (with leading space, no line number)
 
 Your response should be:
-1. Brief analysis of what to change
-2. The complete unified diff
+1. Brief analysis of what to change (mentioning line numbers from PART 1)
+2. The complete unified diff (using EXACT content from PART 2)
 
 Generate the unified diff now:"""
 
@@ -506,9 +526,12 @@ Generate the unified diff now:"""
                 verbose=False,
             )
 
+            print(f"[ENGINE] Sending prompt to LLM ({len(combined_prompt)} chars)")
+
             result = llm.create_chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a code editor. Analyze tasks and generate unified diffs."},
+                    {"role": "system",
+                     "content": "You are a code editor. Analyze tasks using line numbers, but generate diffs using exact file content without line numbers."},
                     {"role": "user", "content": combined_prompt},
                 ],
                 temperature=0.0,
@@ -517,29 +540,55 @@ Generate the unified diff now:"""
             )
 
             full_response = result["choices"][0]["message"]["content"] or ""
+            print(f"[ENGINE] LLM response length: {len(full_response)} chars")
 
             # Extract explanation (everything before the diff)
             if "diff --git" in full_response:
                 parts = full_response.split("diff --git", 1)
                 explanation = parts[0].strip()
                 diff_text = "diff --git" + parts[1]
+                print(f"[ENGINE] Found diff marker, extracted diff of {len(diff_text)} chars")
             else:
                 explanation = full_response[:200]
                 diff_text = full_response
+                print(f"[ENGINE] No clear diff marker found, treating entire response as diff")
 
             # Clean and validate the diff
             candidate = _extract_unified_diff(diff_text)
             if candidate:
+                print(f"[ENGINE] Extracted unified diff of {len(candidate)} chars")
+
                 # Basic validation - check it has the required parts
                 has_header = "diff --git" in candidate
                 has_file_markers = "---" in candidate and "+++" in candidate
                 has_hunk = "@@" in candidate
                 has_changes = "-" in candidate or "+" in candidate
 
+                # Additional check: ensure no line numbers in context
+                has_line_numbers = bool(re.search(r'^[ \-\+]\s*\d+:', candidate, re.MULTILINE))
+
+                print(
+                    f"[ENGINE] Validation: header={has_header}, markers={has_file_markers}, hunk={has_hunk}, changes={has_changes}, line_nums={has_line_numbers}")
+
+                if has_line_numbers:
+                    print(f"[ENGINE] WARNING: Diff contains line numbers, attempting to clean")
+                    # Clean line numbers from the diff
+                    cleaned_lines = []
+                    for line in candidate.splitlines():
+                        if line.startswith((' ', '-', '+')) and not line.startswith('+++') and not line.startswith(
+                                '---'):
+                            # Remove line number prefix
+                            cleaned_line = re.sub(r'^([ \-\+])\s*\d+:\s*', r'\1', line)
+                            cleaned_lines.append(cleaned_line)
+                        else:
+                            cleaned_lines.append(line)
+                    candidate = '\n'.join(cleaned_lines)
+                    print(f"[ENGINE] Cleaned diff to remove line numbers")
+
                 if has_header and has_file_markers and has_hunk and has_changes:
                     diff_text = candidate
                     used_engine = "llama"
-                    print(f"[ENGINE] LLM generated valid diff")
+                    print(f"[ENGINE] LLM generated valid diff (first try)")
                 else:
                     print(f"[ENGINE] LLM diff missing required parts")
                     diff_text = ""
@@ -549,6 +598,8 @@ Generate the unified diff now:"""
 
     except Exception as e:
         print(f"[ENGINE] LLM error: {e}")
+        import traceback
+        print(f"[ENGINE] Traceback: {traceback.format_exc()}")
         diff_text = ""
 
     # If LLM failed, try OpenAI
@@ -559,6 +610,7 @@ Generate the unified diff now:"""
             try:
                 import requests, json
 
+                # OpenAI also needs actual content, not numbered
                 resp = requests.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -566,19 +618,20 @@ Generate the unified diff now:"""
                         "model": "gpt-4o-mini",
                         "messages": [
                             {"role": "system",
-                             "content": "You are a diff generator. Create unified diffs for code changes."},
+                             "content": "You are a diff generator. Create unified diffs using exact file content."},
                             {"role": "user", "content": f"""Task: {goal}
 
 File: {path}
-Content (first 100 lines):
+Actual content (first 100 lines):
 {chr(10).join(lines[:100])}
 
 Generate a unified diff for this change. 
 Start with: diff --git a/{path} b/{path}
-Include --- and +++ lines
-Include @@ hunk markers
+Include --- a/{path} and +++ b/{path}
+Include @@ hunk markers with proper line numbers
 Show removed lines with - and added lines with +
-Include context lines with space prefix"""}
+Include context lines with space prefix
+CRITICAL: Use the EXACT text from the file above, no line numbers or modifications"""}
                         ],
                         "temperature": 0
                     }),
@@ -587,22 +640,44 @@ Include context lines with space prefix"""}
 
                 if resp.ok:
                     openai_response = resp.json()["choices"][0]["message"]["content"]
+                    print(f"[ENGINE] OpenAI response length: {len(openai_response)} chars")
+
                     candidate = _extract_unified_diff(openai_response)
                     if candidate:
-                        diff_text = candidate
-                        used_engine = "openai"
-                        explanation = "Generated via OpenAI"
+                        # Validate OpenAI's diff too
+                        from manager_learning import _validate_diff_basic
+                        err = _validate_diff_basic(candidate)
+                        if err:
+                            print(f"[ENGINE] OpenAI diff rejected by validator: {err}")
+                            diff_text = ""
+                        else:
+                            diff_text = candidate
+                            used_engine = "openai"
+                            explanation = "Generated via OpenAI"
+                            print(f"[ENGINE] OpenAI generated valid diff")
+                    else:
+                        print(f"[ENGINE] Could not extract diff from OpenAI response")
             except Exception as e:
                 print(f"[ENGINE] OpenAI error: {e}")
+        else:
+            print(f"[ENGINE] No OpenAI API key available for fallback")
 
     # Build summary
     summary = f"Goal: {goal}\nTarget: {path}\nEngine: {used_engine or 'failed'}"
 
+    if diff_text:
+        print(f"[ENGINE] Final diff length: {len(diff_text)} chars")
+        # Final validation check
+        if re.search(r'^[ \-\+]\s*\d+:', diff_text, re.MULTILINE):
+            print(f"[ENGINE] WARNING: Final diff still contains line numbers!")
+    else:
+        print(f"[ENGINE] No diff generated")
+
     return summary, diff_text, explanation or "No explanation available"
 
 
-import re
-from typing import Optional
+
+
 
 def _repair_top_insert_hunk(diff_text: str, target_path: str, inserted_marker: str = "# NOTE: self-improve smoke test") -> str:
     """
